@@ -478,6 +478,17 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn('[[ -z $override_backup ]] || rm -f -- "$override_backup" || true', activation)
         self.assertLess(activation.rindex("activated=true"), activation.rindex('rm -f -- "$override_backup" || true'))
 
+    def test_claim_hostnames_come_from_settings(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        defaults = (ROOT / "lib" / "settings.js").read_text(encoding="utf-8")
+        view = (ROOT / "views" / "claim_address.pug").read_text(encoding="utf-8")
+        self.assertIn("settings.claim_address_page.allowed_hosts", app)
+        self.assertNotIn("const claimAllowedHosts = ['", app)
+        self.assertIn("must list at least one valid public hostname", app)
+        self.assertIn(f'"allowed_hosts": ["{HOST}"]', defaults)
+        self.assertIn("settings.claim_address_page.allowed_hosts[0]", view)
+        self.assertNotIn("https://explorer.mariacoin.com", view)
+
     def test_host_hardening_exposes_only_required_ports(self):
         firewall = text("host/configure-host.sh")
         ssh = text("ssh/00-eiquidus-hardening.conf")

@@ -1456,6 +1456,9 @@
     //          If set to false, the claim page will be completely inaccessible
     //          NOTE: Disabling this feature after addresses have already been claimed will effectively hide the claimed values and restore the original wallet addresses again
     "enabled": true,
+    // allowed_hosts: The public hostname(s) this explorer is served from. Claim challenges are bound to the first entry,
+    //                and claim requests for any other hostname are rejected. Set this to your own explorer domain.
+    "allowed_hosts": ["explorer.mariacoin.com"],
     // show_panels: Determine whether to show the panels configured in the shared_pages.page_header section across the top of this page (true/false)
     "show_panels": false,
     // show_nethash_chart: Determine whether to show the network hashrate chart configured in the shared_pages.network_charts.nethash_chart section across the top of this page (true/false)

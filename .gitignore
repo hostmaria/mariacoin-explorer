@@ -35,3 +35,6 @@ settings.json
 .DS_Store
 
 dist/
+__pycache__/
+*.pyc
+dist/

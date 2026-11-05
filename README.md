@@ -1,3 +1,52 @@
+# MariaCoin Explorer
+
+This is the block explorer software behind https://explorer.mariacoin.com, the public explorer for the MariaCoin ($maria) network. It is a fork of [eIquidus](https://github.com/team-exor/eiquidus) by Team Exor, with MariaCoin-specific changes and a hardened, reproducible deployment kit for Ubuntu 24.04.
+
+This repository exists so anyone can run their own $maria explorer from the same reviewed code that runs the public one, and so anyone can check what that public explorer is running.
+
+## What is MariaCoin-specific
+
+- Support for Maria Core v5.5.1 RPC and transaction types (`lib/mariacoin.js`, covered by `test/mariacoinV551Spec.js`).
+- MariaCoin branding and colours (`public/`, `deploy/branding/`).
+- Self-service address claims: an address owner can prove control of an indexed address by signing a server-issued message, then add a public display name. Claim challenges are bound to the hostnames in `claim_address_page.allowed_hosts` (see below).
+- A deployment kit in `deploy/` that installs Maria Core, MongoDB, Node.js and the explorer on Ubuntu 24.04 with pinned, checksum-verified downloads, a loopback-only database and RPC, key-only SSH, fail2ban, log rotation, serialized index sync, authenticated backups with restore tests, and a maintenance page during indexing.
+
+## Running your own explorer
+
+1. Read `deploy/README.md` first. It gives the exact provisioning order and the verification gates that must pass before the site is switched out of maintenance mode.
+2. Set your own public hostname. In your `settings.json`, set `claim_address_page.allowed_hosts` to your explorer domain (for example `["explorer.example.org"]`). The explorer refuses to start with the claim page enabled and no valid hostname. In `deploy/nginx/production.conf` and `deploy/tests/test_deployment_policy.py` (`HOST`), replace `explorer.mariacoin.com` with your domain before you build.
+3. Build a release archive with `python deploy/eiquidus/build-release.py`, then follow the install steps in `deploy/README.md`.
+4. Run the checks before deploying:
+   - `python -m unittest discover -s deploy/tests -v`
+   - `bash deploy/tests/static-checks.sh`
+   - `npm ci && npm test`
+
+## Verifying a release
+
+Release archives are deterministic. The release ID is the first 40 hex characters of the SHA-256 of `eiquidus-release.tar.gz`, and the same source tree produces the same ID on Windows and Linux. The deployed release directory on a server is named after that ID, so you can rebuild a tagged commit and compare.
+
+| Tag | Release ID | Notes |
+|---|---|---|
+| `release-8213a74` | `8213a74a9e603b81a0c55d193e6101f635771b43` | Production release on explorer.mariacoin.com as of November 2026. Built with the original build script; rebuilding it on Linux needs Windows path ordering, which later commits make the default. |
+
+Pinned third-party sources and their checksums are listed in `deploy/RELEASE-SOURCES.md`, including a known limitation: the Maria Core v5.5.1 daemon binary is pinned by checksum, but its embedded revision does not match the public release commit, so the binary cannot yet be reproduced from source.
+
+## Security
+
+Please do not report vulnerabilities in public issues. See [SECURITY.md](SECURITY.md).
+
+Operators: never put RPC passwords, database credentials or `settings.json` in this repository. The release builder refuses to package `settings.json`, `.env`, private keys and certificates, but it cannot catch secrets placed in other files.
+
+## Disclaimer
+
+This is open-source infrastructure software provided "as is" under the BSD licence in `LICENSE`, without warranty of any kind. It shows public blockchain data and makes no statement about the value, legal status or future of $maria or any other digital asset. Nothing in this repository is financial, investment, legal or tax advice. Address claims and display names are self-asserted by their owners and are not verified identities. If you run your own explorer, you are responsible for its security, availability and compliance in your jurisdiction.
+
+## Upstream
+
+The original eIquidus documentation follows below and still applies to the explorer application itself. MariaCoin-specific changes are kept as separate commits on top of upstream so upstream fixes can be merged.
+
+---
+
 # eIquidus
 
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/team-exor/eiquidus?color=ffbd11&label=version)

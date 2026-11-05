@@ -199,7 +199,13 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const claimRateLimiter = claim.createRateLimiter({limit: 12, windowMs: 10 * 60 * 1000, maxEntries: 10000});
-const claimAllowedHosts = ['explorer.mariacoin.com'];
+// Public hostnames this explorer is served from (claim_address_page.allowed_hosts). Claim challenges are bound
+// to the first entry and requests for any other hostname are rejected, so this must be set to your own domain.
+const claimAllowedHosts = (Array.isArray(settings.claim_address_page.allowed_hosts) ? settings.claim_address_page.allowed_hosts : [])
+  .map(function(host) { return String(host).trim().toLowerCase(); })
+  .filter(function(host) { return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host); });
+if (settings.claim_address_page.enabled === true && claimAllowedHosts.length === 0)
+  throw new Error('claim_address_page.allowed_hosts must list at least one valid public hostname when the claim page is enabled');
 const claimChallengeStore = {
   create: function(record) {
     return ClaimChallenge.create(record);

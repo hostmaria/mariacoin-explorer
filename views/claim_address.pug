@@ -136,7 +136,7 @@ block content
     .alert.alert-warning(role='alert')
       strong Security warning
       p.mb-1.mt-2 Never enter or share your private key or seed phrase. This explorer asks only for a public wallet address, a server-issued message and the signature created by your wallet.
-      p.mb-0 Verify that you are using https://explorer.mariacoin.com before signing anything.
+      p.mb-0 Verify that you are using https://#{settings.claim_address_page.allowed_hosts[0]} before signing anything.
 
     .alert.alert-info(role='alert')
       strong What a claim means
