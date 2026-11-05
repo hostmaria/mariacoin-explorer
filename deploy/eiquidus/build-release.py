@@ -8,7 +8,7 @@ import gzip
 import hashlib
 import io
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import stat
 import subprocess
 import tarfile
@@ -34,7 +34,9 @@ def source_paths() -> list[Path]:
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=ROOT,
     )
-    relative = sorted({Path(item.decode("utf-8")) for item in output.split(b"\0") if item})
+    # Order like Windows paths on every OS so one source tree yields one release ID on Windows and Linux.
+    # Historical releases were built on Windows, where Path sorting is case-insensitive.
+    relative = sorted({Path(item.decode("utf-8")) for item in output.split(b"\0") if item}, key=lambda path: PureWindowsPath(path.as_posix()))
     excluded_parts = {".hermes", "node_modules", "dist", "tmp", "backups", "__pycache__"}
     relative = [
         path for path in relative
