@@ -478,6 +478,10 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn('[[ -z $override_backup ]] || rm -f -- "$override_backup" || true', activation)
         self.assertLess(activation.rindex("activated=true"), activation.rindex('rm -f -- "$override_backup" || true'))
 
+    def test_checkout_is_byte_exact_for_reproducible_release_ids(self):
+        attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("* -text", attributes.splitlines())
+
     def test_claim_hostnames_come_from_settings(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         defaults = (ROOT / "lib" / "settings.js").read_text(encoding="utf-8")

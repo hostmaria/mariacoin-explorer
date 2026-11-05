@@ -1,0 +1,4 @@
+# Keep files byte-for-byte as committed on every OS. Release IDs are hashes of the
+# packaged bytes, so line-ending conversion (e.g. core.autocrlf=true on Windows)
+# would change the release ID of an otherwise identical tree.
+* -text
