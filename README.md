@@ -27,7 +27,7 @@ Release archives are deterministic. The release ID is the first 40 hex character
 
 | Tag | Release ID | Notes |
 |---|---|---|
-| `release-8213a74` | `8213a74a9e603b81a0c55d193e6101f635771b43` | Production release on explorer.mariacoin.com as of November 2026. Built with the original build script; rebuilding it on Linux needs Windows path ordering, which later commits make the default. |
+| `release-8213a74` | `8213a74a9e603b81a0c55d193e6101f635771b43` | Production release on explorer.mariacoin.com as of November 2026. Built with the original build script; rebuilding it on Linux needs Windows path ordering, which later commits make the default. The tag predates `.gitattributes`, so on Windows clone it with `git clone -c core.autocrlf=false --branch release-8213a74 ...`. |
 
 Pinned third-party sources and their checksums are listed in `deploy/RELEASE-SOURCES.md`, including a known limitation: the Maria Core v5.5.1 daemon binary is pinned by checksum, but its embedded revision does not match the public release commit, so the binary cannot yet be reproduced from source.
 
