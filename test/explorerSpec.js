@@ -132,4 +132,33 @@ describe('explorer', function() {
       jasmine.DEFAULT_TIMEOUT_INTERVAL = originalTimeout;
     });
   });
+
+  describe('peer geolocation', function() {
+    const fs = require('fs');
+    const path = require('path');
+    const sync = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'sync.js'), 'utf8').replace(/\r\n/g, '\n');
+    const explorerSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'explorer.js'), 'utf8');
+
+    it('resolves countries from the local GeoIP database, not an external web API', function() {
+      expect(explorerSource).toContain('geoip.lookup(address)');
+      expect(explorerSource).not.toContain('ip-api.com');
+      expect(explorerSource).not.toContain('reallyfreegeoip.org');
+    });
+
+    it('returns a blank country for an address the local database does not know', function(done) {
+      lib.get_geo_location('192.0.2.1', function(err, geo) {
+        expect(err).toBeNull();
+        expect(geo.country_code).toBe('');
+        done();
+      });
+    });
+
+    it('keeps syncing peers when a geolocation lookup fails', function() {
+      const start = sync.indexOf('lib.get_geo_location(address, function(error, geo) {');
+      expect(start).toBeGreaterThan(-1);
+      const handler = sync.slice(start, sync.indexOf('});', start));
+      expect(handler).not.toContain('exit(1)');
+      expect(handler.match(/add_new_peers\('', ''\)/g).length).toBe(2);
+    });
+  });
 });

@@ -1591,14 +1591,16 @@ if (lib.is_locked([database]) == false) {
                       rateLimit.schedule(function() {
                         // call an external geo location api to determine which country the current peer is from
                         lib.get_geo_location(address, function(error, geo) {
+                          // A failed lookup must not stop peer sync (upstream c87cb90/74d6c21):
+                          // keep the peer for addnode purposes and leave its country blank.
                           if (error) {
                             console.log(error);
-                            exit(1);
+                            add_new_peers('', '');
                           } else if (geo == null || typeof geo != 'object') {
                             console.log(`Error: geolocation api returned unexpected results for ip address ${address}`);
-                            exit(1);
+                            add_new_peers('', '');
                           } else {
-                            add_new_peers(geo.country_name, geo.country_code);
+                            add_new_peers(geo.country_name ? geo.country_name : '', geo.country_code ? geo.country_code : '');
                           }
                         });
                       });
