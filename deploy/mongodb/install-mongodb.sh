@@ -25,6 +25,7 @@ apt-get update -qq; apt-get install -y \
   "mongodb-org-database-tools-extra=${MONGODB_VERSION}"
 apt-mark hold mongodb-org mongodb-org-database mongodb-org-server mongodb-org-shell mongodb-org-mongos mongodb-org-tools mongodb-org-database-tools-extra
 install -o root -g mongodb -m 0644 /tmp/mongod.conf /etc/mongod.conf
+install -o root -g root -m 0644 /tmp/mongodb.logrotate /etc/logrotate.d/mongodb
 openssl rand -base64 756 > /etc/mongodb-keyfile
 chown mongodb:mongodb /etc/mongodb-keyfile; chmod 0400 /etc/mongodb-keyfile
 getent group eiquidus >/dev/null || groupadd --system eiquidus

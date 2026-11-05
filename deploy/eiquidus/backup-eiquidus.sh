@@ -6,11 +6,11 @@ umask 0077
 backup_root=/var/backups/mariacoin-explorer
 lock=/run/lock/mariacoin-explorer-backup.lock
 credential_file=/etc/eiquidus/mongodb-admin.json
-retention_days=${BACKUP_RETENTION_DAYS:-7}
+keep_count=${BACKUP_KEEP_COUNT:-2}
 
 exec 9>"$lock"
 flock -n 9 || { echo 'another explorer backup is running' >&2; exit 1; }
-[[ $retention_days =~ ^[1-9][0-9]*$ ]] || { echo 'invalid backup retention' >&2; exit 1; }
+[[ $keep_count =~ ^[1-9][0-9]*$ ]] || { echo 'invalid backup keep count' >&2; exit 1; }
 [[ -f $credential_file && ! -L $credential_file ]] || { echo 'MongoDB administrator credentials unavailable' >&2; exit 1; }
 
 install -d -o root -g root -m 0700 "$backup_root"
@@ -163,7 +163,7 @@ readlink -f /opt/eiquidus/current >"$stage/RELEASE"
 )
 python3 /opt/eiquidus/current/deploy/eiquidus/publish-release.py "$stage" "$target"
 stage=
-find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name '20??????T??????Z' -mtime "+$retention_days" -exec rm -rf -- {} +
+find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name '20??????T??????Z' -printf '%f\n' | sort -r | tail -n +"$((keep_count + 1))" | while IFS= read -r old; do rm -rf -- "${backup_root:?}/$old"; done
 rm -f "$config"
 restore_runtime
 trap - EXIT

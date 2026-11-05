@@ -13,4 +13,6 @@ disablewallet=1
 staking=0
 coldstaking=0
 logtimestamps=1
-maxconnections=64
+maxconnections=32
+dbcache=100
+maxmempool=50

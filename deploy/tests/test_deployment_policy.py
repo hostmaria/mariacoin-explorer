@@ -42,7 +42,7 @@ class DeploymentPolicyTests(unittest.TestCase):
     def test_daemon_is_unprivileged_loopback_rpc_and_non_staking(self):
         config = text("mariacoin/maria.conf.template")
         unit = text("systemd/mariacoind.service")
-        for setting in ("port=47773", "rpcport=47774", "rpcbind=127.0.0.1", "rpcallowip=127.0.0.1", "txindex=1", "disablewallet=1", "staking=0", "coldstaking=0"):
+        for setting in ("port=47773", "rpcport=47774", "rpcbind=127.0.0.1", "rpcallowip=127.0.0.1", "txindex=1", "disablewallet=1", "staking=0", "coldstaking=0", "maxconnections=32", "dbcache=100", "maxmempool=50"):
             self.assertIn(setting, config)
         self.assertIn("User=mariacoin", unit)
         self.assertIn("ProtectSystem=strict", unit)
@@ -68,6 +68,8 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn("keyFile: /etc/mongodb-keyfile", config)
         self.assertIn("openssl rand -base64 756", installer)
         self.assertIn("chmod 0400 /etc/mongodb-keyfile", installer)
+        self.assertIn("/etc/logrotate.d/mongodb", installer)
+        self.assertIn("maxsize 200M", (DEPLOY / "logrotate/mongodb").read_text(encoding="utf-8"))
         self.assertIn("replSetInitiate", installer)
         self.assertIn("isWritablePrimary", installer)
         self.assertIn("readWrite", text("mongodb/create-app.js"))
@@ -208,6 +210,9 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn("DATABASE-MANIFEST.json", backup)
         self.assertLess(backup.index("DATABASE-MANIFEST.json"), backup.index("mongodump --config="))
         self.assertIn("-name '20??????T??????Z'", backup)
+        self.assertIn("keep_count=${BACKUP_KEEP_COUNT:-2}", backup)
+        self.assertIn('tail -n +"$((keep_count + 1))"', backup)
+        self.assertNotIn("-mtime", backup)
         self.assertIn('release=$(basename "$(readlink -f /opt/eiquidus/current)")', backup)
         self.assertIn("production_nginx=/etc/nginx/sites-available/maria-production-$release.conf", backup)
         self.assertIn("/etc/nginx/sites-available/maria-maintenance.conf", backup)
@@ -482,7 +487,12 @@ class DeploymentPolicyTests(unittest.TestCase):
             self.assertNotIn(forbidden, firewall)
         self.assertIn("PasswordAuthentication no", ssh)
         self.assertIn("KbdInteractiveAuthentication no", ssh)
-        self.assertIn("PermitRootLogin prohibit-password", ssh)
+        self.assertIn("PermitRootLogin no", ssh)
+        self.assertNotIn("PasswordAuthentication yes", ssh)
+        self.assertIn("fail2ban", firewall)
+        self.assertIn("banaction = ufw", firewall)
+        self.assertIn("SystemMaxUse=500M", firewall)
+        self.assertIn("zswap.enabled=1", firewall)
         self.assertNotRegex(firewall.lower(), r"getty|pm2|cron")
 
     def test_branding_provenance_and_expected_assets_exist(self):

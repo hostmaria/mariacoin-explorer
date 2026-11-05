@@ -1,0 +1,11 @@
+/var/log/mongodb/mongod.log {
+  daily
+  rotate 7
+  maxsize 200M
+  compress
+  delaycompress
+  missingok
+  notifempty
+  copytruncate
+  su mongodb mongodb
+}
