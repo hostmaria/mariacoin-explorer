@@ -258,6 +258,63 @@ describe('MariaCoin chain-tip orphan discovery', function() {
     await expectAsync(discovery).toBeRejectedWithError(/stale chain-tip set changed/i);
   });
 
+  function racingRpc(racesBeforeStable) {
+    let observations = 0;
+    const staleTip = {height: 100, hash: hashes.stale, branchlen: 1, status: 'valid-fork'};
+    const appearing = {height: 90, hash: 'e'.repeat(64), branchlen: 1, status: 'valid-fork'};
+    const rpc = {
+      getChainTips: async () => {
+        observations++;
+        // each discovery reads tips twice (start, end); the end read of the first
+        // racesBeforeStable discoveries reports an extra stale tip
+        const discovery = Math.ceil(observations / 2);
+        const isFinalRead = observations % 2 === 0;
+        return isFinalRead && discovery <= racesBeforeStable ? [activeTip(), staleTip, appearing] : [activeTip(), staleTip];
+      },
+      getBlockHash: async height => height === 99 ? hashes.previous : hashes.good,
+      getBlock: async hash => hash === hashes.stale
+        ? {hash, height: 100, previousblockhash: hashes.previous}
+        : {hash, height: 100, previousblockhash: hashes.previous, nextblockhash: hashes.next}
+    };
+    return {rpc, reads: () => observations};
+  }
+
+  it('retries discovery when the stale tip set changes mid-traversal and returns a stable snapshot', async function() {
+    const {rpc, reads} = racingRpc(2);
+    const retries = [];
+    const rows = await orphanTips.discoverStable(rpc, {attempts: 3, onRetry: attempt => retries.push(attempt)});
+    expect(retries).toEqual([1, 2]);
+    expect(reads()).toBe(6);
+    expect(rows.map(row => row.orphan_blockhash)).toEqual([hashes.stale]);
+  });
+
+  it('fails closed after the bounded number of snapshot races', async function() {
+    const {rpc, reads} = racingRpc(5);
+    await expectAsync(orphanTips.discoverStable(rpc, {attempts: 3})).toBeRejectedWithError(/stale chain-tip set changed during discovery/i);
+    expect(reads()).toBe(6);
+  });
+
+  it('does not retry discovery errors other than snapshot races', async function() {
+    let reads = 0;
+    const rpc = {
+      getChainTips: async () => { reads++; return [activeTip(), activeTip()]; },
+      getBlockHash: async () => hashes.good,
+      getBlock: async hash => ({hash, height: 101})
+    };
+    await expectAsync(orphanTips.discoverStable(rpc, {attempts: 3})).toBeRejectedWithError(/expected exactly one active tip/i);
+    expect(reads).toBe(1);
+  });
+
+  it('rejects an invalid retry budget', async function() {
+    await expectAsync(orphanTips.discoverStable({}, {attempts: 0})).toBeRejectedWithError(/attempts must be an integer/i);
+  });
+
+  it('uses bounded discovery retries from the scheduled block sync', function() {
+    const sync = fs.readFileSync(require('path').join(__dirname, '..', 'scripts', 'sync.js'), 'utf8');
+    expect(sync).toContain('orphanTips.discoverStable(');
+    expect(sync).toContain('attempts: 3');
+  });
+
   it('rejects an active tip with a non-zero branch length', async function() {
     const discovery = orphanTips.discover({
       getChainTips: async () => [{...activeTip(100), branchlen: 7}],

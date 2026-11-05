@@ -874,10 +874,13 @@ function rpc_result(method, ...args) {
 }
 
 function discover_chain_tip_orphans() {
-  return orphanTips.discover({
+  return orphanTips.discoverStable({
     getChainTips: () => rpc_result(lib.get_chain_tips),
     getBlockHash: height => rpc_result(lib.get_blockhash, height),
     getBlock: hash => rpc_result(lib.get_block, hash)
+  }, {
+    attempts: 3,
+    onRetry: (attempt, err) => console.log(`Chain-tip snapshot changed during orphan discovery (attempt ${attempt}): ${err.message}; retrying`)
   });
 }
 
