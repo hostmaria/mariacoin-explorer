@@ -54,7 +54,11 @@ self_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
 unset EIQUIDUS_MONGODB_INDEX_MIGRATION EIQUIDUS_MONGODB_CREDENTIALS EIQUIDUS_ALLOW_ORPHAN_MIGRATION_RESUME
 
 for unit in eiquidus-web.service eiquidus-sync.service eiquidus-sync.timer eiquidus-backup.service eiquidus-backup.timer; do
-  ! systemctl is-active --quiet "$unit" || { echo "$unit must be inactive during installation" >&2; exit 1; }
+  # `is-active` misses a oneshot sync that is still running (ActiveState=activating).
+  case "$(systemctl show --property=ActiveState --value "$unit")" in
+    inactive|failed) ;;
+    *) echo "$unit must be inactive during installation" >&2; exit 1 ;;
+  esac
 done
 
 target=/opt/eiquidus/releases/$release

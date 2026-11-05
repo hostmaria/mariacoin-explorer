@@ -57,6 +57,15 @@ select_nginx_target() {
   systemctl reload nginx
 }
 
+# A oneshot sync run reports ActiveState=activating for its whole run, which
+# `systemctl is-active` treats as not active. Only inactive or failed is idle.
+unit_busy() {
+  case "$(systemctl show --property=ActiveState --value "$1")" in
+    inactive|failed) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 wait_web_ready() {
   for _ in $(seq 1 30); do
     if systemctl is-active --quiet eiquidus-web.service \
@@ -71,7 +80,14 @@ wait_web_ready() {
 restore_runtime() {
   failed=false
   if [[ $web_was_active == true ]]; then
-    if systemctl start eiquidus-web.service && wait_web_ready; then web_was_active=false; else failed=true; fi
+    # Keep the public site out of maintenance after transient start failures:
+    # retry for several minutes before giving up and failing loudly.
+    for attempt in $(seq 1 10); do
+      if systemctl start eiquidus-web.service && wait_web_ready; then web_was_active=false; break; fi
+      echo "web restart attempt $attempt failed; retrying" >&2
+      sleep 20
+    done
+    [[ $web_was_active == false ]] || failed=true
   fi
   if [[ $nginx_restore_required == true && $web_was_active == false ]]; then
     if select_nginx_target "$nginx_enabled_target"; then nginx_restore_required=false; else failed=true; fi
@@ -114,17 +130,17 @@ if systemctl is-active --quiet eiquidus-web.service; then
   fi
   systemctl stop eiquidus-web.service
 fi
-! systemctl is-active --quiet eiquidus-web.service || { echo 'web writer did not quiesce for backup' >&2; exit 1; }
+! unit_busy eiquidus-web.service || { echo 'web writer did not quiesce for backup' >&2; exit 1; }
 
 if systemctl is-active --quiet eiquidus-sync.timer; then
   timer_was_active=true
   systemctl stop eiquidus-sync.timer
 fi
 for _ in $(seq 1 120); do
-  systemctl is-active --quiet eiquidus-sync.service || break
+  unit_busy eiquidus-sync.service || break
   sleep 5
 done
-! systemctl is-active --quiet eiquidus-sync.service || { echo 'index sync did not quiesce for backup' >&2; exit 1; }
+! unit_busy eiquidus-sync.service || { echo 'index sync did not quiesce for backup' >&2; exit 1; }
 
 python3 - "$credential_file" "$config" <<'PY'
 import json, pathlib, sys

@@ -482,6 +482,28 @@ class DeploymentPolicyTests(unittest.TestCase):
         attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("* -text", attributes.splitlines())
 
+    def test_running_oneshot_sync_counts_as_busy(self):
+        backup = text("eiquidus/backup-eiquidus.sh")
+        installer = text("eiquidus/install-eiquidus.sh")
+        for script in (backup, installer):
+            self.assertIn("inactive|failed)", script)
+        self.assertIn("unit_busy eiquidus-sync.service || break", backup)
+        self.assertIn("! unit_busy eiquidus-sync.service ||", backup)
+        self.assertIn("! unit_busy eiquidus-web.service ||", backup)
+        self.assertNotIn("systemctl is-active --quiet eiquidus-sync.service", backup)
+        self.assertNotIn('! systemctl is-active --quiet "$unit"', installer)
+        helper = "unit_busy() {" + backup.split("unit_busy() {", 1)[1].split("\n}\n", 1)[0] + "\n}"
+        for state, busy in (("activating", True), ("active", True), ("deactivating", True), ("reloading", True), ("inactive", False), ("failed", False)):
+            probe = subprocess.run(["bash", "-c", f"systemctl(){{ echo {state}; }}\n{helper}\nunit_busy x"], capture_output=True, text=True, check=False)
+            self.assertEqual(probe.returncode == 0, busy, state)
+
+    def test_backup_retries_web_restart_before_leaving_maintenance(self):
+        backup = text("eiquidus/backup-eiquidus.sh")
+        restore = backup.split("restore_runtime() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("for attempt in $(seq 1 10); do", restore)
+        self.assertIn("systemctl start eiquidus-web.service && wait_web_ready", restore)
+        self.assertLess(restore.index("seq 1 10"), restore.index("select_nginx_target"))
+
     def test_claim_hostnames_come_from_settings(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         defaults = (ROOT / "lib" / "settings.js").read_text(encoding="utf-8")
