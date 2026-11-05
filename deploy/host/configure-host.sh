@@ -43,4 +43,6 @@ printf '%s\n' 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT zswap.ena
 update-grub
 systemctl disable --now ModemManager.service multipathd.service multipathd.socket fwupd-refresh.timer 2>/dev/null || true
 systemctl stop fwupd.service packagekit.service 2>/dev/null || true
-systemctl mask fwupd.service packagekit.service
+# Mask fwupd only. packagekit is D-Bus activated on demand by an apt hook; masking it
+# makes every apt run print a UnitMasked error, and it exits again when idle.
+systemctl mask fwupd.service
