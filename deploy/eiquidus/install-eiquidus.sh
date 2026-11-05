@@ -53,6 +53,19 @@ self_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
 }
 unset EIQUIDUS_MONGODB_INDEX_MIGRATION EIQUIDUS_MONGODB_CREDENTIALS EIQUIDUS_ALLOW_ORPHAN_MIGRATION_RESUME
 
+# This server's public hostname (root-owned /etc/eiquidus/explorer-host). The staged
+# settings must bind claim challenges to exactly this host, so a settings file meant
+# for another explorer can never be installed here.
+source "$EIQUIDUS_VERIFIED_ROOT/deploy/eiquidus/explorer-host.sh"
+HOST=$(read_explorer_host)
+python3 - "$SETTINGS" "$HOST" <<'PY'
+import json, sys
+settings, host = json.load(open(sys.argv[1])), sys.argv[2]
+hosts = settings.get('claim_address_page', {}).get('allowed_hosts')
+if not isinstance(hosts, list) or not hosts or hosts[0] != host:
+    raise SystemExit(f'settings claim_address_page.allowed_hosts must start with this explorer host ({host})')
+PY
+
 for unit in eiquidus-web.service eiquidus-sync.service eiquidus-sync.timer eiquidus-backup.service eiquidus-backup.timer; do
   # `is-active` misses a oneshot sync that is still running (ActiveState=activating).
   case "$(systemctl show --property=ActiveState --value "$unit")" in
@@ -246,10 +259,11 @@ install -o root -g root -m 0644 "$target/deploy/eiquidus/mongodb-preflight.js" /
 install -o root -g root -m 0755 "$target/deploy/eiquidus/verify-index.js" /usr/local/libexec/eiquidus/verify-index.js
 install -o root -g root -m 0755 "$target/deploy/eiquidus/backup-eiquidus.sh" /usr/local/libexec/eiquidus/backup-eiquidus.sh
 install -o root -g root -m 0755 "$target/deploy/eiquidus/verify-eiquidus-backup.sh" /usr/local/libexec/eiquidus/verify-eiquidus-backup.sh
-install -o root -g root -m 0644 "$target/deploy/nginx/production.conf" "$nginx_config"
-install -o root -g root -m 0644 "$target/deploy/nginx/maintenance.conf" /etc/nginx/sites-available/maria-maintenance.conf
-install -o root -g root -m 0644 "$target/deploy/nginx/maintenance-tls.conf" /etc/nginx/sites-available/maria-maintenance-tls.conf
-install -o root -g root -m 0644 "$target/deploy/nginx/maintenance.html" /var/www/maintenance/maintenance.html
+render_explorer_template "$target/deploy/nginx/production.conf" "$nginx_config" "$HOST" 0644
+render_explorer_template "$target/deploy/nginx/maintenance.conf" /etc/nginx/sites-available/maria-maintenance.conf "$HOST" 0644
+render_explorer_template "$target/deploy/nginx/maintenance-tls.conf" /etc/nginx/sites-available/maria-maintenance-tls.conf "$HOST" 0644
+render_explorer_template "$target/deploy/nginx/maintenance.html" /var/www/maintenance/maintenance.html "$HOST" 0644
+nginx -t
 install -o root -g root -m 0644 "$target/public/img/maria-logo.png" /var/www/maintenance/maria-logo.png
 install -o root -g root -m 0644 \
   "$target/deploy/systemd/eiquidus-web.service" \

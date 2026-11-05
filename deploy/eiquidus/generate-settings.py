@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 
@@ -159,6 +160,7 @@ def main() -> None:
     parser.add_argument("--rpc-config", type=Path, required=True)
     parser.add_argument("--mongodb-credentials", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--explorer-host-file", type=Path, default=Path("/etc/eiquidus/explorer-host"))
     args = parser.parse_args()
 
     settings = json.loads(strip_json_comments(args.template.read_text(encoding="utf-8")))
@@ -184,6 +186,11 @@ def main() -> None:
     settings.setdefault("api_page", {})["enabled"] = True
     settings.setdefault("markets_page", {})["enabled"] = False
     settings.setdefault("plugins", {})["plugin_secret_code"] = secrets.token_urlsafe(48)
+    host = args.explorer_host_file.read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+", host):
+        raise SystemExit(f"invalid explorer hostname in {args.explorer_host_file}")
+    # claim challenges are bound to this explorer's own public hostname
+    settings.setdefault("claim_address_page", {})["allowed_hosts"] = [host]
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_name(args.output.name + ".new")

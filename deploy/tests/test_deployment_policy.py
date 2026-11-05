@@ -1,6 +1,7 @@
 import json
 import hashlib
 from pathlib import Path
+import os
 import re
 import subprocess
 import sys
@@ -427,8 +428,10 @@ class DeploymentPolicyTests(unittest.TestCase):
         maintenance_tls = text("nginx/maintenance-tls.conf")
         production = text("nginx/production.conf")
         activation = text("eiquidus/activate-production.sh")
-        self.assertIn(f"server_name {HOST};", maintenance)
-        self.assertIn(f"server_name {HOST};", production)
+        for template in (maintenance, maintenance_tls, production):
+            self.assertIn("server_name @EXPLORER_HOST@;", template)
+            self.assertNotIn("explorer.mariacoin.com", template)
+            self.assertNotIn("stakersforum", template)
         self.assertIn("location ~* ^/claim", production)
         self.assertIn("location = /maria-logo.png", maintenance)
         self.assertIn("location = /maria-logo.png", maintenance_tls)
@@ -481,6 +484,71 @@ class DeploymentPolicyTests(unittest.TestCase):
     def test_checkout_is_byte_exact_for_reproducible_release_ids(self):
         attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("* -text", attributes.splitlines())
+
+    def _host_probe(self, body, host_line="explorer.example.org\n", mode=0o644):
+        helper = (DEPLOY / "eiquidus" / "explorer-host.sh").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            host_file = Path(directory) / "explorer-host"
+            host_file.write_text(host_line, encoding="utf-8")
+            host_file.chmod(mode)
+            lines = [
+                "set -e",
+                # tests run unprivileged: report the temporary host file as root-owned
+                'stat(){ if [[ $2 == %u ]]; then echo 0; else command stat "$@"; fi; }',
+                "chown(){ :; }",
+                helper,
+                f"EXPLORER_HOST_FILE={host_file.as_posix()}",
+                body,
+            ]
+            return subprocess.run(["bash", "-c", "\n".join(lines)], capture_output=True, text=True, check=False, cwd=directory)
+
+    def test_explorer_host_file_is_validated(self):
+        ok = self._host_probe("read_explorer_host")
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertEqual(ok.stdout.strip(), "explorer.example.org")
+        for bad in ("localhost\n", "Explorer.Example.Org\n", "evil.com/x\n", "a..b\n", "\n", "explorer.example.org; rm -rf /\n"):
+            probe = self._host_probe("read_explorer_host", host_line=bad)
+            self.assertNotEqual(probe.returncode, 0, bad)
+        if os.name != "nt":  # NTFS cannot express group/world write bits
+            writable = self._host_probe("read_explorer_host", mode=0o666)
+            self.assertNotEqual(writable.returncode, 0)
+            self.assertIn("writable", writable.stderr)
+
+    def test_templates_render_for_each_independent_explorer(self):
+        for host in ("explorer.mariacoin.com", "maria.stakersforum.com"):
+            for name in ("production.conf", "maintenance.conf", "maintenance-tls.conf", "maintenance.html"):
+                source = DEPLOY / "nginx" / name
+                probe = self._host_probe(f'out=$(mktemp)\nrender_explorer_template {source.as_posix()} "$out" {host} 0644\ncat "$out"', host_line=host + "\n")
+                self.assertEqual(probe.returncode, 0, probe.stderr)
+                self.assertNotIn("@EXPLORER_HOST@", probe.stdout)
+                self.assertIn(host, probe.stdout)
+                other = "maria.stakersforum.com" if host == "explorer.mariacoin.com" else "explorer.mariacoin.com"
+                self.assertNotIn(other, probe.stdout)
+            production_template = (DEPLOY / "nginx" / "production.conf").as_posix()
+            production = self._host_probe(f'out=$(mktemp)\nrender_explorer_template {production_template} "$out" {host} 0644\ncat "$out"', host_line=host + "\n").stdout
+            self.assertIn(f"server_name {host};", production)
+            self.assertIn(f"/etc/letsencrypt/live/{host}/fullchain.pem", production)
+
+    def test_deploy_scripts_take_the_hostname_from_the_server(self):
+        installer = text("eiquidus/install-eiquidus.sh")
+        activation = text("eiquidus/activate-production.sh")
+        maintenance = text("nginx/install-maintenance.sh")
+        backup = text("eiquidus/backup-eiquidus.sh")
+        for script in (installer, activation, maintenance):
+            self.assertIn("HOST=$(read_explorer_host)", script)
+            self.assertNotIn("HOST=explorer.mariacoin.com", script)
+        self.assertIn("settings claim_address_page.allowed_hosts must start with this explorer host", installer)
+        self.assertLess(installer.index("HOST=$(read_explorer_host)"), installer.index("npm ci"))
+        for name in ("production.conf", "maintenance.conf", "maintenance-tls.conf", "maintenance.html"):
+            self.assertIn(f'render_explorer_template "$target/deploy/nginx/{name}"', installer)
+        self.assertIn("/etc/eiquidus/explorer-host", backup)
+        settings_check = installer.split("python3 - \"$SETTINGS\" \"$HOST\" <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            for hosts, expected in ((["maria.stakersforum.com"], 0), (["explorer.mariacoin.com"], 1), ([], 1), (None, 1)):
+                path = Path(directory) / "settings.json"
+                path.write_text(json.dumps({"claim_address_page": {} if hosts is None else {"allowed_hosts": hosts}}), encoding="utf-8")
+                probe = subprocess.run([sys.executable, "-c", settings_check, str(path), "maria.stakersforum.com"], capture_output=True, text=True, check=False)
+                self.assertEqual(probe.returncode != 0, bool(expected), (hosts, probe.stderr))
 
     def test_running_oneshot_sync_counts_as_busy(self):
         backup = text("eiquidus/backup-eiquidus.sh")

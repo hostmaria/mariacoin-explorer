@@ -17,6 +17,8 @@ class SettingsGeneratorTests(unittest.TestCase):
             rpc = d / "maria.conf"
             mongo = d / "mongo.json"
             output = d / "settings.json"
+            host_file = d / "explorer-host"
+            host_file.write_text("maria.stakersforum.com\n", encoding="utf-8")
             template.write_text(json.dumps({
                 "coin": {}, "wallet": {}, "dbsettings": {},
                 "webserver": {"tls": {}, "cors": {}},
@@ -24,7 +26,7 @@ class SettingsGeneratorTests(unittest.TestCase):
             }), encoding="utf-8")
             rpc.write_text("rpcuser=rpc_user\nrpcpassword=rpc_secret\n", encoding="utf-8")
             mongo.write_text(json.dumps({"username": "db_user", "password": "db_secret", "database": "mariacoin"}), encoding="utf-8")
-            subprocess.run([sys.executable, str(GENERATOR), "--template", str(template), "--rpc-config", str(rpc), "--mongodb-credentials", str(mongo), "--output", str(output)], check=True)
+            subprocess.run([sys.executable, str(GENERATOR), "--template", str(template), "--rpc-config", str(rpc), "--mongodb-credentials", str(mongo), "--output", str(output), "--explorer-host-file", str(host_file)], check=True)
             rendered = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual({"name": "MariaCoin", "symbol": "$maria"}, rendered["coin"])
             self.assertEqual(("127.0.0.1", 47774, "rpc_user", "rpc_secret"), (rendered["wallet"]["host"], rendered["wallet"]["port"], rendered["wallet"]["username"], rendered["wallet"]["password"]))
@@ -50,11 +52,14 @@ class SettingsGeneratorTests(unittest.TestCase):
             rpc = d / "maria.conf"
             mongo = d / "mongo.json"
             output = d / "settings.json"
+            host_file = d / "explorer-host"
+            host_file.write_text("maria.stakersforum.com\n", encoding="utf-8")
             rpc.write_text("rpcuser=rpc_user\nrpcpassword=rpc_secret\n", encoding="utf-8")
             mongo.write_text(json.dumps({"username": "db_user", "password": "db_secret", "database": "mariacoin"}), encoding="utf-8")
             subprocess.run([
                 sys.executable, str(GENERATOR), "--template", str(source_template),
-                "--rpc-config", str(rpc), "--mongodb-credentials", str(mongo), "--output", str(output)
+                "--rpc-config", str(rpc), "--mongodb-credentials", str(mongo), "--output", str(output),
+                "--explorer-host-file", str(host_file)
             ], check=True)
             rendered = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual("0000040cb60b26f13ffcd2f692d679e172da34096041efe215d8c50cd65dd9f9", rendered["block_page"]["genesis_block"])
@@ -83,6 +88,23 @@ class SettingsGeneratorTests(unittest.TestCase):
             self.assertEqual("verifymessage", rendered["api_cmds"]["verifymessage"])
             self.assertFalse(rendered["api_page"]["public_apis"]["rpc"].get("verifymessage", {}).get("enabled", False))
             self.assertNotIn('"Exor"', json.dumps(rendered))
+
+
+
+    def test_binds_claims_to_this_servers_hostname_and_rejects_bad_hosts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            template, rpc, mongo, output, host_file = d / "t.json", d / "maria.conf", d / "m.json", d / "settings.json", d / "explorer-host"
+            template.write_text(json.dumps({"coin": {}, "claim_address_page": {"allowed_hosts": ["explorer.mariacoin.com"]}}), encoding="utf-8")
+            rpc.write_text("rpcuser=u\nrpcpassword=p\n", encoding="utf-8")
+            mongo.write_text(json.dumps({"username": "u", "password": "p", "database": "mariacoin"}), encoding="utf-8")
+            command = [sys.executable, str(GENERATOR), "--template", str(template), "--rpc-config", str(rpc), "--mongodb-credentials", str(mongo), "--output", str(output), "--explorer-host-file", str(host_file)]
+            host_file.write_text("maria.stakersforum.com\n", encoding="utf-8")
+            subprocess.run(command, check=True)
+            self.assertEqual(["maria.stakersforum.com"], json.loads(output.read_text(encoding="utf-8"))["claim_address_page"]["allowed_hosts"])
+            for bad in ("localhost\n", "Bad.Host.com\n", "x.com/evil\n", "\n"):
+                host_file.write_text(bad, encoding="utf-8")
+                self.assertNotEqual(0, subprocess.run(command, capture_output=True).returncode, bad)
 
 
 if __name__ == "__main__":

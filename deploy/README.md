@@ -1,4 +1,12 @@
-# Ubuntu 24.04 deployment assets for explorer.mariacoin.com
+# Ubuntu 24.04 deployment assets for MariaCoin explorers
+
+These assets deploy one independent explorer per server (for example explorer.mariacoin.com and maria.stakersforum.com). Each server declares its own public hostname in a root-owned file, and the same release archive renders nginx, the maintenance page, TLS paths and activation for that host:
+
+```
+printf '%s\n' explorer.example.org | install -o root -g root -m 0644 /dev/stdin /etc/eiquidus/explorer-host
+```
+
+The staged `settings.json` must set `claim_address_page.allowed_hosts` with this hostname first; the installer refuses to run otherwise, so a settings file meant for another explorer cannot be installed. Servers share no data, credentials, keys or services. Deploy a new release to one explorer first and to the other after it has run cleanly.
 
 These assets deliberately do not deploy application source trees. Build a reviewed eIquidus archive from the pinned clean repository, stage only the named files in each installer, and keep Nginx in maintenance mode through the full initial index.
 

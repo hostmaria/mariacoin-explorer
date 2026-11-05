@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 shopt -s nullglob
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-HOST=explorer.mariacoin.com
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/explorer-host.sh"
+HOST=$(read_explorer_host)
 MARKER=/var/lib/eiquidus/INDEX_VERIFIED.json
 BACKUP_MARKER=/var/lib/eiquidus/BACKUP_VERIFIED.json
 CURRENT=/opt/eiquidus/current

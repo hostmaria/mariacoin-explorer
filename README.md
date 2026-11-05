@@ -14,7 +14,7 @@ This repository exists so anyone can run their own $maria explorer from the same
 ## Running your own explorer
 
 1. Read `deploy/README.md` first. It gives the exact provisioning order and the verification gates that must pass before the site is switched out of maintenance mode.
-2. Set your own public hostname. In your `settings.json`, set `claim_address_page.allowed_hosts` to your explorer domain (for example `["explorer.example.org"]`). The explorer refuses to start with the claim page enabled and no valid hostname. In `deploy/nginx/production.conf` and `deploy/tests/test_deployment_policy.py` (`HOST`), replace `explorer.mariacoin.com` with your domain before you build.
+2. Set your own public hostname. Write it to `/etc/eiquidus/explorer-host` (root-owned, mode 0644), and set `claim_address_page.allowed_hosts` in your `settings.json` to the same domain first (for example `["explorer.example.org"]`). The installer renders nginx, the maintenance page and TLS paths for that host and refuses to install if the two disagree. No source changes are needed per host.
 3. Build a release archive with `python deploy/eiquidus/build-release.py`, then follow the install steps in `deploy/README.md`.
 4. Run the checks before deploying:
    - `python -m unittest discover -s deploy/tests -v`

@@ -32,6 +32,7 @@ backup_inputs=(
   /etc/eiquidus/mongodb-admin.json
   /etc/eiquidus/mongodb-app.json
   /etc/mariacoin/maria.conf
+  /etc/eiquidus/explorer-host
   "$production_nginx"
   /etc/nginx/sites-available/maria-maintenance.conf
   /etc/nginx/sites-available/maria-maintenance-tls.conf
