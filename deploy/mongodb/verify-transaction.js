@@ -1,0 +1,12 @@
+const fs = require('fs');
+const c = JSON.parse(fs.readFileSync('/etc/eiquidus/mongodb-app.json'));
+const d = db.getSiblingDB('mariacoin');
+if (!d.auth(c.username, c.password)) throw new Error('app authentication failed');
+const session = db.getMongo().startSession();
+const txdb = session.getDatabase('mariacoin');
+session.startTransaction();
+txdb.getCollection('__deployment_transaction_probe').insertOne({_id: 'abort-proof'});
+session.abortTransaction();
+if (d.getCollection('__deployment_transaction_probe').countDocuments({_id: 'abort-proof'}) !== 0) throw new Error('transaction abort failed');
+d.getCollection('__deployment_transaction_probe').drop();
+session.endSession();

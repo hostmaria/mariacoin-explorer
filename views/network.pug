@@ -248,11 +248,11 @@ block content
             table#connections-table.table.table-bordered.table-striped.table-paging.table-hover.mobile-border-right
               thead
                 tr(class=theadClasses)
-                  th.text-center #{settings.localization.net_address}
+                  th.text-center='IP'
                   if settings.network_page.connections_table.port_filter != null && settings.network_page.connections_table.port_filter != -1
                     th.text-center='Port'
                   th.text-center #{settings.localization.net_protocol}
-                  th.text-center #{settings.localization.net_subversion}
+                  th.text-center='Wallet version'
                   th.text-center #{settings.localization.net_country}
               tbody.text-center
       if settings.network_page.addnodes_table.enabled || settings.network_page.onetry_table.enabled

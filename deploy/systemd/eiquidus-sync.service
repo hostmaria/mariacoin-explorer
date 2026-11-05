@@ -1,0 +1,36 @@
+[Unit]
+Description=MariaCoin eIquidus serialized block sync
+After=mongod.service mariacoind.service
+Requires=mongod.service mariacoind.service
+
+[Service]
+Type=oneshot
+User=eiquidus
+Group=eiquidus
+SupplementaryGroups=maria-rpc
+WorkingDirectory=/opt/eiquidus/current
+Environment=NODE_ENV=production
+Environment=EIQUIDUS_MONGODB_CREDENTIALS=/etc/eiquidus/mongodb-app.json
+Environment=EIQUIDUS_MONGODB_INDEX_MIGRATION=0
+Environment=EIQUIDUS_ALLOW_ORPHAN_MIGRATION_RESUME=1
+ExecStartPre=/usr/local/libexec/eiquidus/preflight.sh
+ExecStart=/usr/local/bin/node --stack-size=10000 ./scripts/sync.js index update
+ExecStart=/usr/local/bin/node --stack-size=10000 ./scripts/sync.js masternodes
+ExecStart=/usr/local/bin/node --stack-size=10000 ./scripts/sync.js peers
+TimeoutStartSec=infinity
+Nice=10
+LimitCORE=0
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadWritePaths=/var/lib/eiquidus
+UMask=0027

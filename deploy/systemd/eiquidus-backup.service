@@ -1,0 +1,26 @@
+[Unit]
+Description=MariaCoin explorer authenticated backup
+After=network-online.target mongod.service mariacoind.service
+Wants=network-online.target
+Requires=mongod.service mariacoind.service
+ConditionPathIsDirectory=/opt/eiquidus/current
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/libexec/eiquidus/backup-eiquidus.sh
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/var/backups/mariacoin-explorer /run/lock /run /var/lib/eiquidus/tmp /etc/nginx/sites-enabled /var/log/nginx
+
+[Install]
+WantedBy=multi-user.target

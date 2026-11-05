@@ -1,0 +1,16 @@
+# Generated on the VPS; never commit rendered credentials.
+server=1
+daemon=0
+listen=1
+port=47773
+rpcport=47774
+rpcbind=127.0.0.1
+rpcallowip=127.0.0.1
+rpcuser=@RPC_USER@
+rpcpassword=@RPC_PASSWORD@
+txindex=1
+disablewallet=1
+staking=0
+coldstaking=0
+logtimestamps=1
+maxconnections=64

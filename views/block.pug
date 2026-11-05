@@ -97,7 +97,7 @@ block content
               td.text-center
                 each address in extracted_by_addresses
                   div(style='overflow: auto;')
-                    a(href=`/address/${address.a_id}`)=(address.claimname == '' ? address.a_id : address.claimname)
+                    a(href=`/address/${address.a_id}`)=(address.claimname == '' ? address.a_id : address.claimname + ' (' + address.a_id + ', self-claimed)')
                     include ./includes/rl_labels.pug
             if block.confirmations >= confirmations
               td.text-center.table-success=block.confirmations

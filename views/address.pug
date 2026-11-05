@@ -132,14 +132,16 @@ block content
             strong #{address.a_id}
         else
           strong #{claim_name}
+          span.small.text-muted.ms-2 Self-claimed display name
+          div.small.text-muted.breakWord #{address.a_id}
         | &#8203;
         include ./includes/rl_labels.pug
         if (!settings.labels[address.a_id] || !settings.labels[address.a_id].enabled) && settings.claim_address_page.enabled == true
           a#claim-address.fw-bold(href='/claim/' + address.a_id, style='font-size:smaller;padding-bottom:0;')
             if claim_name == null || claim_name == ''
-              =" Is this yours? Claim it now for free!"
+              =" Add a self-claimed display name"
             else
-              =" Update claimed address"
+              =" Update self-claimed display name"
       table#address-summary.table.table-bordered.table-striped.summary-table.mobile-border-right(style='border-top:0;margin-top:0 !important;')
         thead
           tr(class=theadClasses)

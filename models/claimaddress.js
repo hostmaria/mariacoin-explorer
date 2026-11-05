@@ -3,7 +3,8 @@ var mongoose = require('mongoose'),
 
 var ClaimAddressSchema = new Schema({
   a_id: {type: String, unique: true, index: true},
-  claim_name: {type: String, default: '', index: true}
+  claim_name: {type: String, default: '', index: true},
+  updated_at: {type: Date, default: null, index: true}
 }, {id: false});
 
 module.exports = mongoose.model('ClaimAddress', ClaimAddressSchema);

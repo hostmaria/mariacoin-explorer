@@ -1,5 +1,6 @@
 var express = require('express'),
     path = require('path'),
+    net = require('net'),
     nodeapi = require('./lib/nodeapi'),
     favicon = require('serve-favicon'),
     logger = require('morgan'),
@@ -7,7 +8,9 @@ var express = require('express'),
     settings = require('./lib/settings'),
     routes = require('./routes/index'),
     lib = require('./lib/explorer'),
+    claim = require('./lib/claim'),
     db = require('./lib/database'),
+    ClaimChallenge = require('./models/claimchallenge'),
     package_metadata = require('./package.json');
 var app = express();
 var apiAccessList = [];
@@ -20,7 +23,7 @@ const Decimal = require('decimal.js');
 nodeapi.setWalletDetails(settings.wallet);
 // dynamically build the nodeapi cmd access list by adding all non-blockchain-specific api cmds that have a value
 Object.keys(settings.api_cmds).forEach(function(key, index, map) {
-  if (key != 'use_rpc' && key != 'rpc_concurrent_tasks' && settings.api_cmds[key] != null && settings.api_cmds[key] != '')
+  if (key != 'use_rpc' && key != 'rpc_concurrent_tasks' && key != 'verifymessage' && settings.api_cmds[key] != null && settings.api_cmds[key] != '')
     apiAccessList.push(key);
 });
 // dynamically find and add additional blockchain_specific api cmds
@@ -167,10 +170,165 @@ if (default_favicon != '')
   app.use(favicon(path.join('./public', default_favicon)));
 
 app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const defaultJsonParser = express.json();
+const defaultUrlencodedParser = express.urlencoded({extended: true});
+const claimJsonParser = express.json({limit: '16kb'});
+const claimUrlencodedParser = express.urlencoded({extended: true, limit: '16kb'});
+
+function isClaimMutationPath(req) {
+  const normalizedPath = (req.path.replace(/\/+$/, '') || '/').toLowerCase();
+  return normalizedPath === '/claim' || normalizedPath === '/claim/challenge' || normalizedPath === '/claim/submit';
+}
+
+app.use(function(req, res, next) {
+  return isClaimMutationPath(req) ? claimJsonParser(req, res, next) : defaultJsonParser(req, res, next);
+});
+app.use(function(req, res, next) {
+  return isClaimMutationPath(req) ? claimUrlencodedParser(req, res, next) : defaultUrlencodedParser(req, res, next);
+});
+app.use(function claimBodyParserError(err, req, res, next) {
+  if (!isClaimMutationPath(req))
+    return next(err);
+
+  if (err.type === 'entity.too.large')
+    return res.status(413).json({status: 'failed', error: true, message: 'Claim request is too large'});
+
+  return res.status(400).json({status: 'failed', error: true, message: 'Claim request body is invalid'});
+});
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+const claimRateLimiter = claim.createRateLimiter({limit: 12, windowMs: 10 * 60 * 1000, maxEntries: 10000});
+const claimAllowedHosts = ['explorer.mariacoin.com'];
+const claimChallengeStore = {
+  create: function(record) {
+    return ClaimChallenge.create(record);
+  },
+  consume: function(query) {
+    return ClaimChallenge.findOneAndUpdate({
+      hostname: query.hostname,
+      challenge_id: query.challenge_id,
+      address: query.address,
+      display_name: query.display_name,
+      consumed_at: null,
+      expires_at: {$gt: query.now}
+    }, {
+      $set: {consumed_at: query.now}
+    }, {
+      new: true
+    }).lean();
+  }
+};
+const claimService = claim.createClaimService({
+  allowedHosts: claimAllowedHosts,
+  challengeStore: claimChallengeStore,
+  addressExists: function(address) {
+    return new Promise(function(resolve, reject) {
+      db.get_claimable_address(address, function(err, foundAddress) {
+        if (err != null)
+          reject(err);
+        else
+          resolve(foundAddress === true);
+      });
+    });
+  },
+  verifyMessage: function(address, signature, message) {
+    return new Promise(function(resolve, reject) {
+      if (settings.api_cmds.use_rpc !== true) {
+        reject(new Error('Direct MariaCoin RPC verification is unavailable'));
+        return;
+      }
+
+      lib.verify_message(address, signature, message, function(err, verified) {
+        if (err)
+          reject(err);
+        else
+          resolve(verified === true);
+      });
+    });
+  },
+  updateClaim: function(address, displayName) {
+    return new Promise(function(resolve, reject) {
+      db.update_claim_name(address, displayName, function(result) {
+        if (result === '')
+          resolve();
+        else if (result != null && result.code === 'claim_cooldown')
+          reject(claim.claimError(result.message, result.code));
+        else if (result != null && result.code === 'no_address')
+          reject(claim.claimError(result.message, result.code));
+        else
+          reject(new Error('Unable to persist address claim'));
+      });
+    });
+  }
+});
+
+function claimClientKey(req) {
+  const peerAddress = req.socket.remoteAddress || '';
+  const realAddress = req.get('x-real-ip') || '';
+  const peerIsLoopback = peerAddress === '::1' || peerAddress === '127.0.0.1' || peerAddress.startsWith('::ffff:127.');
+
+  if (peerIsLoopback && net.isIP(realAddress))
+    return realAddress;
+
+  return peerAddress;
+}
+
+function claimRequestAllowed(req, res) {
+  if (settings.claim_address_page.enabled !== true) {
+    res.status(404).json({status: 'failed', error: true, message: 'Address claiming is not available'});
+    return false;
+  }
+
+  if (settings.claim_address_page.enable_captcha === true || settings.claim_address_page.enable_bad_word_filter === true) {
+    res.status(503).json({status: 'failed', error: true, message: 'Address claiming is unavailable because an unsupported moderation option is enabled'});
+    return false;
+  }
+
+  if (req.body == null || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    res.status(400).json({status: 'failed', error: true, message: 'Claim request body is invalid'});
+    return false;
+  }
+
+  if (!claim.csrfMatches(req.cookies['__Host-maria_claim_csrf'], req.body.csrfToken)) {
+    res.status(403).json({status: 'failed', error: true, message: 'The claim form expired. Reload the page and try again'});
+    return false;
+  }
+
+  if (!claimRateLimiter.take(claimClientKey(req))) {
+    res.status(429).json({status: 'failed', error: true, message: 'Too many claim attempts. Wait ten minutes and try again'});
+    return false;
+  }
+
+  return true;
+}
+
+function sendClaimFailure(res, err) {
+  const expectedError = err != null && typeof err.code === 'string';
+  res.status(expectedError ? 400 : 503).json({
+    status: 'failed',
+    error: true,
+    message: expectedError ? err.message : 'The claim could not be completed safely. Please try again later'
+  });
+}
+
+app.use('/claim', function(req, res, next) {
+  res.set('Cache-Control', 'no-store');
+
+  if (req.method === 'GET' && settings.claim_address_page.enabled === true) {
+    const csrfToken = claim.newCsrfToken();
+    res.cookie('__Host-maria_claim_csrf', csrfToken, {
+      secure: true,
+      httpOnly: true,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 30 * 60 * 1000
+    });
+    res.locals.claimCsrfToken = csrfToken;
+  }
+
+  next();
+});
 
 // routes
 app.use('/api', nodeapi.app);
@@ -181,151 +339,40 @@ pluginRoutes.forEach(function (r) {
   app.use('/', r);
 });
 
-// post method to claim an address using verifymessage functionality
-app.post('/claim', function(req, res) {
-  // validate captcha if applicable
-  validate_captcha(settings.claim_address_page.enable_captcha, req.body, function(captcha_error) {
-    // check if there was a problem with captcha
-    if (captcha_error) {
-      // show the captcha error
-      res.json({'status': 'failed', 'error': true, 'message': 'The captcha validation failed'});
-    } else {
-      // filter bad words if enabled
-      filter_bad_words((req.body.message == null || req.body.message == '' ? '' : req.body.message), function(claim_error, message) {
-        // check if there was an error or if the message was filtered
-        if (claim_error != null) {
-          // an error occurred with loading the bad-words filter
-          res.json({'status': 'failed', 'error': true, 'message': 'Error loading the bad-words filter: ' + claim_error});
-        } else if (message == req.body.message) {
-          // call the verifymessage api
-          lib.verify_message(req.body.address, req.body.signature, req.body.message, function(body) {
-            if (body == false)
-              res.json({'status': 'failed', 'error': true, 'message': 'Invalid signature'});
-            else if (body == true) {
-              db.update_claim_name(req.body.address, req.body.message, function(val) {
-                // check if the update was successful
-                if (val == '')
-                  res.json({'status': 'success'});
-                else if (val == 'no_address')
-                  res.json({'status': 'failed', 'error': true, 'message': 'Wallet address ' + req.body.address + ' is not valid or does not have any transactions'});
-                else
-                  res.json({'status': 'failed', 'error': true, 'message': 'Wallet address or signature is invalid'});
-              });
-            } else
-              res.json({'status': 'failed', 'error': true, 'message': 'Wallet address or signature is invalid'});
-          });
-        } else {
-          // message was filtered which would change the signature
-          res.json({'status': 'failed', 'error': true, 'message': 'Display name contains bad words and cannot be saved: ' + message});
-        }
-      });
-    }
-  });
+app.post('/claim/challenge', async function(req, res) {
+  if (!claimRequestAllowed(req, res))
+    return;
+
+  try {
+    const challenge = await claimService.issueChallenge({
+      hostname: claimAllowedHosts[0],
+      address: req.body.address,
+      displayName: req.body.displayName
+    });
+    res.json({status: 'success', challenge: challenge});
+  } catch (err) {
+    sendClaimFailure(res, err);
+  }
 });
 
-function validate_captcha(captcha_enabled, data, cb) {
-  // check if captcha is enabled for the requested feature
-  if (captcha_enabled == true) {
-    // determine the captcha type
-    if (settings.captcha.google_recaptcha3.enabled == true) {
-      if (data.google_recaptcha3 != null) {
-        const request = require('postman-request');
+// Verify only the exact server-issued message through the private RPC adapter.
+app.post('/claim', async function(req, res) {
+  if (!claimRequestAllowed(req, res))
+    return;
 
-        request({uri: 'https://www.google.com/recaptcha/api/siteverify?secret=' + settings.captcha.google_recaptcha3.secret_key + '&response=' + data.google_recaptcha3, json: true}, function (error, response, body) {
-          if (error) {
-            // an error occurred while trying to validate the captcha
-            return cb(true);
-          } else if (body == null || body == '' || typeof body !== 'object') {
-            // return data is invalid
-            return cb(true);
-          } else if (body.score == null || body.score < settings.captcha.google_recaptcha3.pass_score) {
-            // captcha challenge failed
-            return cb(true);
-          } else {
-            // captcha challenge passed
-            return cb(false);
-          }
-        });
-      } else {
-        // a captcha response wasn't received
-        return cb(true);
-      }
-    } else if (settings.captcha.google_recaptcha2.enabled == true) {
-      if (data.google_recaptcha2 != null) {
-        const request = require('postman-request');
-
-        request({uri: 'https://www.google.com/recaptcha/api/siteverify?secret=' + settings.captcha.google_recaptcha2.secret_key + '&response=' + data.google_recaptcha2, json: true}, function (error, response, body) {
-          if (error) {
-            // an error occurred while trying to validate the captcha
-            return cb(true);
-          } else if (body == null || body == '' || typeof body !== 'object') {
-            // return data is invalid
-            return cb(true);
-          } else if (body.success == null || body.success == false) {
-            // captcha challenge failed
-            return cb(true);
-          } else {
-            // captcha challenge passed
-            return cb(false);
-          }
-        });
-      } else {
-        // a captcha response wasn't received
-        return cb(true);
-      }
-    } else if (settings.captcha.hcaptcha.enabled == true) {
-      if (data.hcaptcha != null) {
-        const request = require('postman-request');
-
-        request({uri: 'https://hcaptcha.com/siteverify?secret=' + settings.captcha.hcaptcha.secret_key + '&response=' + data.hcaptcha, json: true}, function (error, response, body) {
-          if (error) {
-            // an error occurred while trying to validate the captcha
-            return cb(true);
-          } else if (body == null || body == '' || typeof body !== 'object') {
-            // return data is invalid
-            return cb(true);
-          } else if (body.success == null || body.success == false) {
-            // captcha challenge failed
-            return cb(true);
-          } else {
-            // captcha challenge passed
-            return cb(false);
-          }
-        });
-      } else {
-        // a captcha response wasn't received
-        return cb(true);
-      }
-    } else {
-      // no captcha options are enabled
-      return cb(false);
-    }
-  } else {
-    // captcha is not enabled for this feature
-    return cb(false);
-  }
-}
-
-function filter_bad_words(msg, cb) {
-  // check if the bad-words filter is enabled
-  if (settings.claim_address_page.enable_bad_word_filter == true) {
-    // import the bad-words dependency
-    import('bad-words').then(function(module) {
-      // load the bad-words filter
-      const bad_word_lib = module.Filter;
-      const bad_word_filter = new bad_word_lib();
-
-       // return the filtered msg
-      return cb(null, bad_word_filter.clean(msg));
-    })
-    .catch(function(err) {
-      return cb(err, null);
+  try {
+    const result = await claimService.submitClaim({
+      hostname: claimAllowedHosts[0],
+      challengeId: req.body.challengeId,
+      address: req.body.address,
+      displayName: req.body.displayName,
+      signature: req.body.signature
     });
-  } else {
-    // return the msg without filtering for bad words
-    return cb(null, msg);
+    res.json({status: 'success', claim: result});
+  } catch (err) {
+    sendClaimFailure(res, err);
   }
-}
+});
 
 // post method to receive data from a plugin
 app.post('/plugin-request', function(req, res) {
@@ -576,7 +623,10 @@ app.use('/ext/getcurrentprice', function(req, res) {
     db.get_stats(settings.coin.name, function (stats) {
       const currency = lib.get_market_currency_code();
 
-      eval('var p_ext = { "last_price_' + currency.toLowerCase() + '": new Decimal(stats.last_price.toString()).toFixed(), "last_price_usd": new Decimal(stats.last_usd_price.toString()).toFixed(), }');
+      const p_ext = {
+        [`last_price_${currency.toLowerCase()}`]: new Decimal(stats.last_price.toString()).toFixed(),
+        last_price_usd: new Decimal(stats.last_usd_price.toString()).toFixed()
+      };
       res.send(p_ext);
     });
   } else
@@ -594,12 +644,23 @@ app.use('/ext/getbasicstats', function(req, res) {
       if (settings.api_page.public_apis.rpc.getmasternodecount.enabled == true && settings.api_cmds['getmasternodecount'] != null && settings.api_cmds['getmasternodecount'] != '') {
         // masternode count api is available
         lib.get_masternodecount(function(masternodestotal) {
-          eval('var p_ext = { "block_count": (stats.count ? stats.count : 0), "money_supply": new Decimal(stats.supply == null ? "0" : stats.supply.toString()).toFixed(), "last_price_' + currency.toLowerCase() + '": new Decimal(stats.last_price.toString()).toFixed(), "last_price_usd": new Decimal(stats.last_usd_price.toString()).toFixed(), "masternode_count": (masternodestotal == null ? 0 : masternodestotal.total) }');
+          const p_ext = {
+            block_count: stats.count ? stats.count : 0,
+            money_supply: new Decimal(stats.supply == null ? '0' : stats.supply.toString()).toFixed(),
+            [`last_price_${currency.toLowerCase()}`]: new Decimal(stats.last_price.toString()).toFixed(),
+            last_price_usd: new Decimal(stats.last_usd_price.toString()).toFixed(),
+            masternode_count: masternodestotal == null ? 0 : masternodestotal.total
+          };
           res.send(p_ext);
         });
       } else {
         // masternode count api is not available
-        eval('var p_ext = { "block_count": (stats.count ? stats.count : 0), "money_supply": new Decimal(stats.supply == null ? "0" : stats.supply.toString()).toFixed(), "last_price_' + currency.toLowerCase() + '": new Decimal(stats.last_price.toString()).toFixed(), "last_price_usd": new Decimal(stats.last_usd_price.toString()).toFixed() }');
+        const p_ext = {
+          block_count: stats.count ? stats.count : 0,
+          money_supply: new Decimal(stats.supply == null ? '0' : stats.supply.toString()).toFixed(),
+          [`last_price_${currency.toLowerCase()}`]: new Decimal(stats.last_price.toString()).toFixed(),
+          last_price_usd: new Decimal(stats.last_usd_price.toString()).toFixed()
+        };
         res.send(p_ext);
       }
     });
@@ -811,11 +872,14 @@ app.use('/ext/getsummary', function(req, res) {
                 if (hashrate == `${settings.localization.ex_error}: ${settings.localization.check_console}`)
                   hashrate = 0;
 
+                const normalizedHashrate = lib.normalize_optional_decimal(hashrate);
+
                 let mn_total = 0;
                 let mn_enabled = 0;
 
-                // check if the masternode count api is enabled
-                if (settings.api_page.public_apis.rpc.getmasternodecount.enabled == true && settings.api_cmds['getmasternodecount'] != null && settings.api_cmds['getmasternodecount'] != '') {
+                // Internal panels may use the configured command without
+                // enabling the public RPC proxy endpoint.
+                if (settings.api_cmds['getmasternodecount'] != null && settings.api_cmds['getmasternodecount'] != '') {
                   // masternode count api is available
                   if (masternodestotal) {
                     if (masternodestotal.total)
@@ -830,7 +894,7 @@ app.use('/ext/getsummary', function(req, res) {
                   difficulty: (difficulty == null || difficulty == '' ? '-' : difficulty),
                   difficultyHybrid: difficultyHybrid,
                   supply: new Decimal(stats == null || stats.supply == null ? '0' : stats.supply.toString()).toFixed(),
-                  hashrate: new Decimal(hashrate.toString()).toFixed(),
+                  hashrate: normalizedHashrate.toFixed(),
                   lastPrice: new Decimal(stats == null || stats.last_price == null ? '0' : stats.last_price.toString()).toFixed(),
                   lastUSDPrice: new Decimal(stats == null || stats.last_usd_price == null ? '0' : stats.last_usd_price.toString()).toFixed(),
                   connections: (connections ? connections : '-'),
@@ -845,7 +909,7 @@ app.use('/ext/getsummary', function(req, res) {
                   send_data.lastPrice = lib.format_decimal_string(new Decimal(send_data.lastPrice.toString()), { minFractionDigits: 2, maxFractionDigits: 8 });
                   send_data.lastUSDPrice = lib.format_decimal_string(new Decimal(send_data.lastUSDPrice.toString()), { minFractionDigits: 2, maxFractionDigits: 8 });
                   send_data.supply = lib.format_decimal_string(new Decimal(new Decimal(send_data.supply.toString()).toFixed(0)), { minFractionDigits: 0, maxFractionDigits: 0 });
-                  send_data.hashrate = lib.format_decimal_string(new Decimal(hashrate.toString()), { minFractionDigits: 2, maxFractionDigits: 8 });
+                  send_data.hashrate = lib.format_decimal_string(normalizedHashrate, { minFractionDigits: 2, maxFractionDigits: 8 });
                 }
 
                 res.send(send_data);
@@ -1015,20 +1079,6 @@ app.use('/ext/getnetworkchartdata', function(req, res) {
   });
 });
 
-app.use('/system/restartexplorer', function(req, res, next) {
-  // check to ensure this special cmd is only executed by the local server
-  if (req._remoteAddress != null && req._remoteAddress.indexOf('127.0.0.1') > -1) {
-    // send a msg to the cluster process telling it to restart
-    process.send('restart');
-    res.end();
-  } else {
-    // show the error page
-    var err = new Error(settings.localization.error_not_found);
-    err.status = 404;
-    next(err);
-  }
-});
-
 var market_data = [];
 var market_count = 0;
 
@@ -1043,7 +1093,14 @@ if (settings.markets_page.enabled == true) {
         // load market file
         var exMarket = require('./lib/markets/' + key);
         // save market_name and market_logo from market file to settings
-        eval('market_data.push({id: "' + key + '", name: "' + (exMarket.market_name == null ? '' : exMarket.market_name) + '", alt_name: "' + (exMarket.market_name_alt == null ? '' : exMarket.market_name_alt) + '", logo: "' + (exMarket.market_logo == null ? '' : exMarket.market_logo) + '", alt_logo: "' + (exMarket.market_logo_alt == null ? '' : exMarket.market_logo_alt) + '", trading_pairs: []});');
+        market_data.push({
+          id: key,
+          name: exMarket.market_name == null ? '' : exMarket.market_name,
+          alt_name: exMarket.market_name_alt == null ? '' : exMarket.market_name_alt,
+          logo: exMarket.market_logo == null ? '' : exMarket.market_logo,
+          alt_logo: exMarket.market_logo_alt == null ? '' : exMarket.market_logo_alt,
+          trading_pairs: []
+        });
         // loop through all trading pairs for this market
         for (var i = 0; i < settings.markets_page.exchanges[key].trading_pairs.length; i++) {
           var isAlt = false;
@@ -1271,7 +1328,7 @@ if (settings.webserver.tls.enabled == true) {
   }
 
   const https = require('https');
-  let httpd = https.createServer(readCertsSync(), app).listen(settings.webserver.tls.port);
+  let httpd = https.createServer(readCertsSync(), app).listen(settings.webserver.tls.port, '127.0.0.1');
 
   try {
     let waitForCertsToRefresh;

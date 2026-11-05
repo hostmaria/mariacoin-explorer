@@ -68,7 +68,7 @@ block content
               td.text-center
                 each address in extracted_by_addresses
                   div(style='overflow: auto;')
-                    a(href=`/address/${address.a_id}`)=(address.claimname == '' ? address.a_id : address.claimname)
+                    a(href=`/address/${address.a_id}`)=(address.claimname == '' ? address.a_id : address.claimname + ' (' + address.a_id + ', self-claimed)')
                     include ./includes/rl_labels.pug
             if settings.transaction_page.show_op_return == true
               td.breakWord #{tx.op_return}
@@ -113,7 +113,7 @@ block content
                               if address.claim_name == null || address.claim_name == ''
                                 =address.addresses
                               else
-                                =address.claim_name
+                                | #{address.claim_name} (#{address.addresses})
                             include ./includes/rl_labels.pug
                           else if address.addresses == 'hidden_address'
                             if settings.address_page.enable_hidden_address_view == true
@@ -153,7 +153,7 @@ block content
                             if address.claim_name == null || address.claim_name == ''
                               =address.addresses
                             else
-                              =address.claim_name
+                              | #{address.claim_name} (#{address.addresses})
                           include ./includes/rl_labels.pug
                         td.table-success.text-center #{ramountParts[0]}.
                           span.decimal #{ramountParts[1]}
@@ -194,7 +194,7 @@ block content
                           if address.claim_name == null || address.claim_name == ''
                             =address.addresses
                           else
-                            =address.claim_name
+                            | #{address.claim_name} (#{address.addresses})
                         include ./includes/rl_labels.pug
                       td.table-success.text-center #{ramountParts[0]}.
                         span.decimal #{ramountParts[1]}

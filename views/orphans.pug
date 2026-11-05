@@ -48,8 +48,15 @@ block content
           var next_blockhash = data[4];
           $("td:eq(0)", row).html('<a href="/block/' + orphan_blockhash + '"><span class="fa-regular fa-eye" data-bs-toggle="tooltip" data-bs-placement="top" title="#{settings.localization.view_orphan}"></span></a>').addClass('text-center d-table-cell d-md-none');
           $("td:eq(1)", row).html('<a href="/block/' + orphan_blockhash + '">' + orphan_blockhash + '</a>').addClass('breakWord d-none d-md-table-cell');
-          $("td:eq(2)", row).html('<a href="/block/' + good_blockhash + '">' + blockindex.toString() + '</a>').addClass('text-center');
-          $("td:eq(3)", row).html('<a href="/block/' + prev_blockhash + '">' + (blockindex - 1).toString() + '</a>').addClass('text-center');
+          if (good_blockhash == null)
+            $("td:eq(2)", row).text(blockindex.toString()).addClass('text-center');
+          else
+            $("td:eq(2)", row).html('<a href="/block/' + good_blockhash + '">' + blockindex.toString() + '</a>').addClass('text-center');
+
+          if (prev_blockhash == null)
+            $("td:eq(3)", row).html('&nbsp;');
+          else
+            $("td:eq(3)", row).html('<a href="/block/' + prev_blockhash + '">' + (blockindex - 1).toString() + '</a>').addClass('text-center');
 
           if (next_blockhash == null)
             $("td:eq(4)", row).html('&nbsp;');

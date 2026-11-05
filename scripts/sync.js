@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const lib = require('../lib/explorer');
 const blkSync = require('../lib/block_sync');
+const orphanTips = require('../lib/orphan_tips');
 const db = require('../lib/database');
 const Tx = require('../models/tx');
 const Address = require('../models/address');
@@ -12,11 +13,14 @@ const Stats = require('../models/stats');
 const settings = require('../lib/settings');
 const async = require('async');
 const Decimal = require('decimal.js');
+const fs = require('fs');
+const path = require('path');
 let mode = 'update';
 let database = 'index';
-let block_start = 1;
+let block_start = 0;
 let lockCreated = false;
 let stopSync = false;
+let startupOrphansChecked = false;
 
 // prevent stopping of the sync script to be able to gracefully shut down
 process.on('SIGINT', () => {
@@ -82,7 +86,7 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
   get_earliest_orphan_block(orphan_index, orphan_current, last_blockindex, function(orphan_data, err) {
     if (err != null) {
       console.log(err);
-      return cb();
+      return cb(err);
     } else {
       // re-populate the orphan data in case it has changed
       orphan_index = orphan_data.orphan_index;
@@ -187,9 +191,13 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
                     console.log('Resolving orphaned block [' + (i + 1).toString() + '/' + blockhashes.length.toString() + ']: ' + blockhashes[i]);
 
                     // find all orphaned txid's from the current orphan block hash
-                    get_orphaned_txids(blockhashes[i], function(txids) {
+                    get_orphaned_txids(blockhashes[i], function(txids, txidErr) {
+                      if (txidErr)
+                        return block_loop(txidErr);
                       // save the orphan block data to the orphan collection
-                      create_orphan(current_block, blockhashes[i], correct_block_data.prev_hash, block_data.previousblockhash, correct_block_data.next_hash, function() {
+                      create_orphan(current_block, blockhashes[i], correct_block_data.prev_hash, block_data.previousblockhash, correct_block_data.next_hash, function(orphanErr) {
+                        if (orphanErr)
+                          return block_loop(orphanErr);
                         // loop through the remaining orphaned block hashes
                         async.eachSeries(txids, function(current_txid, tx_loop) {
                           // remove the orphaned tx and cleanup all associated data
@@ -229,16 +237,24 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
                         });
                       });
                     });
-                  }, function() {
+                  }, function(blockErr) {
+                    if (blockErr)
+                      return next(blockErr);
                     // check if there was a memory error
                     if (!blkSync.getStackSizeErrorId()) {
                       // get the most recent stats
                       Stats.findOne({coin: settings.coin.name}).then((stats) => {
                         // add missing txes for the current block
-                        blkSync.update_tx_db(settings.coin.name, current_block, current_block, (stats.txes + tx_count), timeout, 2, function(updated_tx_count) {
-                          // update the stats collection by removing the orphaned txes in this block from the tx count
+                        blkSync.update_tx_db(settings.coin.name, current_block, current_block, (stats.txes + tx_count), timeout, 2, function(updated_tx_count, err) {
+                          if (err) {
+                            console.error(`Fatal MariaCoin block repair failure: ${err.message}`);
+                            stopSync = true;
+                            return next(err);
+                          }
+                          // update the stats collection
                           // and setting the orphan_index and orphan_current values in case the sync is interrupted before finishing
                           Stats.updateOne({coin: settings.coin.name}, {
+                            txes: updated_tx_count,
                             orphan_index: current_block,
                             orphan_current: (unresolved_forks.length == 0 ? 0 : unresolved_forks[0])
                           }).then(() => {
@@ -268,12 +284,9 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
                           });
                         });
                       }).catch((err) => {
-                        console.log(err);
-
-                        setTimeout(function() {
-                          // process next block
-                          next(null);
-                        }, timeout);
+                        console.error(`Fatal MariaCoin fork stats read failure: ${err.message}`);
+                        stopSync = true;
+                        return next(err);
                       });
                     } else {
                       setTimeout(function() {
@@ -314,7 +327,7 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
             console.log(err);
 
             // stop fixing orphaned block data
-            return cb();
+            return cb(err instanceof Error ? err : new Error(String(err)));
           }
         } else {
           // check if the script is stopping
@@ -327,6 +340,8 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
             async.eachSeries(orphans, function(current_orphan, orphan_loop) {
               // lookup the block data from the wallet
               lib.get_block(current_orphan.good_blockhash, function (good_block_data) {
+                if (good_block_data == null)
+                  return orphan_loop(new Error(`cannot find canonical block ${current_orphan.good_blockhash}`));
                 // check if the next block hash is known
                 if (good_block_data.nextblockhash != null) {
                   // update the next blockhash for this orphan record
@@ -339,11 +354,7 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
                     }, timeout);
                   }).catch((err) => {
                     console.log(err);
-
-                    setTimeout(function() {
-                      // move to the next orphan record
-                      orphan_loop();
-                    }, timeout);
+                    return orphan_loop(err);
                   });
                 } else {
                   setTimeout(function() {
@@ -352,7 +363,9 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
                   }, timeout);
                 }
               });
-            }, function() {
+            }, function(cleanupErr) {
+              if (cleanupErr)
+                return cb(cleanupErr);
               // update the orphan stats
               Stats.updateOne({coin: settings.coin.name}, {
                 orphan_index: current_block - 1,
@@ -362,12 +375,12 @@ function update_orphans(orphan_index, orphan_current, last_blockindex, timeout, 
                 return cb();
               }).catch((err) => {
                 console.log(err);
-                return cb();
+                return cb(err);
               });
             });
           }).catch((err) => {
             console.log(err);
-            return cb();
+            return cb(err);
           });
         }
       });
@@ -410,7 +423,7 @@ function get_earliest_orphan_block(orphan_index, orphan_current, last_blockindex
           orphan_index: orphan_index
         }).then(() => {
           return cb({orphan_index: orphan_index, orphan_current: orphan_current}, null);
-        });
+        }).catch((err) => cb(null, err));
       } else {
         // no unprocessed orphaned blocks found
         orphan_current = 0;
@@ -422,7 +435,7 @@ function get_earliest_orphan_block(orphan_index, orphan_current, last_blockindex
           orphan_index: orphan_index
         }).then(() => {
           return cb({orphan_index: orphan_index, orphan_current: orphan_current}, null);
-        });
+        }).catch((err) => cb(null, err));
       }
     }).catch((err) => {
       return cb(null, err);
@@ -496,13 +509,13 @@ function create_orphan(blockindex, orphan_blockhash, good_blockhash, prev_blockh
   // create a new orphan record in the local database
   newOrphan.save().then(() => {
     // new orphan record saved successfully
-    return cb();
+    return cb(null);
   }).catch((err) => {
     // check if this is a duplicate key error which can be ignored
-    if (!(err.toString().indexOf('E11000') > -1 || err.toString().indexOf('duplicate key error') > -1))
-      console.log(err);
-
-    return cb();
+    if (err.toString().indexOf('E11000') > -1 || err.toString().indexOf('duplicate key error') > -1)
+      return cb(null);
+    console.log(err);
+    return cb(err);
   });
 }
 
@@ -554,11 +567,9 @@ function check_add_tx(txid, blockhash, tx_count, cb) {
               newTx.save().then(() => {
                 console.log('%s: %s', block.height, txid);
 
-                // check if the tx has vouts
-                if (tx_has_vout) {
-                  // keep a running total of txes that were added
-                  tx_count++;
-                }
+                // Stats.txes counts every successfully persisted transaction,
+                // including shielded-only records without transparent vouts.
+                tx_count += blkSync.persistedTransactionDelta();
 
                 return cb(tx_count);
               }).catch((err) => {
@@ -846,9 +857,74 @@ function occurrences(string, subString, allowOverlapping) {
   return n;
 }
 
-function block_sync(reindex, stats) {
-  // get the last synced block index value
-  const last = (stats.last ? stats.last : 0);
+function reconcile_tx_count(cb) {
+  Tx.countDocuments({})
+    .then((count) => Stats.updateOne({coin: settings.coin.name}, {txes: count}))
+    .then(() => cb(null), err => cb(err));
+}
+
+function rpc_result(method, ...args) {
+  return new Promise((resolve, reject) => {
+    method(...args, function(result) {
+      if (result == null)
+        return reject(new Error('MariaCoin RPC returned no result during orphan discovery'));
+      return resolve(result);
+    });
+  });
+}
+
+function discover_chain_tip_orphans() {
+  return orphanTips.discover({
+    getChainTips: () => rpc_result(lib.get_chain_tips),
+    getBlockHash: height => rpc_result(lib.get_blockhash, height),
+    getBlock: hash => rpc_result(lib.get_block, hash)
+  });
+}
+
+function sync_chain_tip_orphans(cb) {
+  const dependencies = {
+    mongoose,
+    models: {Orphans, Tx, Address, AddressTx, Stats},
+    coin: settings.coin.name,
+    release: path.basename(fs.realpathSync(path.resolve(__dirname, '..')))
+  };
+  const synchronization = orphanTips.pendingRows(dependencies).then(async pending => {
+    const firstRows = pending || await discover_chain_tip_orphans();
+    const first = await orphanTips.synchronize(dependencies, firstRows);
+    if (!pending)
+      return first;
+    const freshRows = await discover_chain_tip_orphans();
+    const fresh = await orphanTips.synchronize(dependencies, freshRows);
+    return {
+      rollbackHeight: first.rollbackHeight == null ? fresh.rollbackHeight : first.rollbackHeight,
+      orphanCount: fresh.orphanCount
+    };
+  });
+  synchronization.then(result => {
+    console.log(`Chain-tip orphan sync complete (${result.orphanCount} discoverable stale blocks)`);
+    cb(null, result);
+  }, err => cb(err));
+}
+
+function block_sync(reindex, stats, orphansChecked = false) {
+  // Repair known forks before indexing newer heights. This prevents a transaction
+  // reused on the canonical chain from colliding with its stale orphan record.
+  if (!reindex && !orphansChecked) {
+    return sync_chain_tip_orphans(function(orphanErr, orphanResult) {
+      if (orphanErr) {
+        console.error(`Fatal MariaCoin chain-tip orphan sync failure: ${orphanErr.message}`);
+        return exit(1);
+      }
+      if (orphanResult.rollbackHeight != null)
+        console.log(`Rolled back stale canonical projections from block ${orphanResult.rollbackHeight}`);
+      db.get_stats(settings.coin.name, function(refreshedStats) {
+        block_sync(false, refreshedStats, true);
+      });
+    });
+  }
+
+  // -1 means unsynced; begin with genesis and otherwise resume after the committed block.
+  const last = (stats.last == null ? -1 : stats.last) + 1;
 
   // get the total number of blocks
   const count = (stats.count ? stats.count : 0);
@@ -856,7 +932,11 @@ function block_sync(reindex, stats) {
   // check if the sync msg should be shown
   check_show_sync_message(count - last);
 
-  blkSync.update_tx_db(settings.coin.name, last, count, stats.txes, settings.sync.update_timeout, 0, function() {
+  blkSync.update_tx_db(settings.coin.name, last, count, stats.txes, settings.sync.update_timeout, 0, function(txes, err) {
+    if (err) {
+      console.error(`Fatal MariaCoin block sync failure: ${err.message}`);
+      stopSync = true;
+    }
     // check if the script stopped prematurely
     if (stopSync) {
       console.log(`${(reindex ? 'Reindex' : 'Block sync')} was stopped prematurely`);
@@ -864,37 +944,34 @@ function block_sync(reindex, stats) {
     } else {
       // update blockchain_last_updated value
       db.update_last_updated_stats(settings.coin.name, { blockchain_last_updated: Math.floor(new Date() / 1000) }, function(cb) {
-        // fix data from orphaned blocks
-        update_orphans(stats.orphan_index, stats.orphan_current, count, settings.sync.update_timeout, function() {
-          // check if the script stopped prematurely
-          if (stopSync) {
-            console.log(`${(reindex ? 'Reindex' : 'Block sync')} was stopped prematurely`);
-            exit(1);
-          } else {
-            db.update_richlist('received', function() {
-              db.update_richlist('balance', function() {
-                update_address_count(function() {
-                  // update richlist_last_updated value
-                  db.update_last_updated_stats(settings.coin.name, { richlist_last_updated: Math.floor(new Date() / 1000) }, function(cb) {                              
-                    db.get_stats(settings.coin.name, function(nstats) {
-                      // check for and update heavycoin data if applicable
-                      update_heavy(settings.coin.name, count, 20, settings.blockchain_specific.heavycoin.enabled, function(heavy) {
-                        // check for and update network history data if applicable
-                        update_network_history(nstats.last, settings.network_history.enabled, function(network_hist) {
-                          // always check for and remove the sync msg if exists
-                          db.remove_sync_message();
+        // check if the script stopped prematurely
+        if (stopSync) {
+          console.log(`${(reindex ? 'Reindex' : 'Block sync')} was stopped prematurely`);
+          exit(1);
+        } else {
+          db.update_richlist('received', function() {
+            db.update_richlist('balance', function() {
+              update_address_count(function() {
+                // update richlist_last_updated value
+                db.update_last_updated_stats(settings.coin.name, { richlist_last_updated: Math.floor(new Date() / 1000) }, function(cb) {
+                  db.get_stats(settings.coin.name, function(nstats) {
+                    // check for and update heavycoin data if applicable
+                    update_heavy(settings.coin.name, count, 20, settings.blockchain_specific.heavycoin.enabled, function(heavy) {
+                      // update network history data if enabled
+                      update_network_history(nstats.last, settings.network_history.enabled, function(network_hist) {
+                        // always check for and remove the sync msg if exists
+                        db.remove_sync_message();
 
-                          console.log(`${(reindex ? 'Reindex' : 'Block sync')} complete (block: %s)`, nstats.last);
-                          exit(0);
-                        });
+                        console.log(`${(reindex ? 'Reindex' : 'Block sync')} complete (block: %s)`, nstats.last);
+                        exit(0);
                       });
                     });
                   });
                 });
               });
             });
-          }
-        });
+          });
+        }
       });
     }
   });
@@ -969,14 +1046,14 @@ function bulkUpsertPeers(peerList, cb) {
   // check if there are any peers
   if (!Array.isArray(peerList) || peerList.length === 0) {
     // finish without doing anything because there are no peers
-    return cb();
+    return cb(true);
   }
 
   function processNextBatch() {
     // check if all records were saved
     if (index >= peerList.length) {
       // all records were saved
-      return cb();
+      return cb(true);
     }
 
     // get the next batch of peers
@@ -1021,15 +1098,11 @@ function bulkUpsertPeers(peerList, cb) {
         processNextBatch();
       }).catch((err) => {
         console.log(err);
-
-        // process the next batch of records
-        processNextBatch();
+        return cb(false);
       });
     } catch(err) {
       console.log(err);
-
-      // process the next batch of records
-      processNextBatch();
+      return cb(false);
     }
   }
 
@@ -1039,12 +1112,20 @@ function bulkUpsertPeers(peerList, cb) {
 
 function removeDuplicatePeers(cb) {
   // remove duplicate peers from the connections table_type
-  removeDuplicatePeersByType('C', settings.network_page.connections_table.enabled, settings.network_page.connections_table.port_filter, function() {
+  removeDuplicatePeersByType('C', settings.network_page.connections_table.enabled, settings.network_page.connections_table.port_filter, function(connection_success) {
+    if (!connection_success) {
+      return cb(false);
+    }
+
     // remove duplicate peers from the addnodes table_type
-    removeDuplicatePeersByType('A', settings.network_page.addnodes_table.enabled, settings.network_page.addnodes_table.port_filter, function() {
+    removeDuplicatePeersByType('A', settings.network_page.addnodes_table.enabled, settings.network_page.addnodes_table.port_filter, function(addnode_success) {
+      if (!addnode_success) {
+        return cb(false);
+      }
+
       // remove duplicate peers from the onetry table_type
-      removeDuplicatePeersByType('O', settings.network_page.onetry_table.enabled, settings.network_page.onetry_table.port_filter, function() {
-        return cb();
+      removeDuplicatePeersByType('O', settings.network_page.onetry_table.enabled, settings.network_page.onetry_table.port_filter, function(onetry_success) {
+        return cb(onetry_success);
       });
     });
   });
@@ -1073,7 +1154,7 @@ function removeDuplicatePeersByType(table_type, enabled, port_filter, cb) {
       { $match: { count: { $gt: 1 } } }
     ]).then((groups) => {
       if (!groups || !groups.length)
-        return cb();
+        return cb(true);
 
       // build delete ops: keep first id, delete the rest
       let ops = [];
@@ -1087,26 +1168,26 @@ function removeDuplicatePeersByType(table_type, enabled, port_filter, cb) {
       }
 
       if (!ops.length)
-        return cb();
+        return cb(true);
 
       try {
         // do one bulkWrite for this type
         Peers.bulkWrite(ops, { ordered: false }).then((result) => {
-          return cb();
+          return cb(true);
         }).catch((err) => {
           console.log(err);
-          return cb();
+          return cb(false);
         });
       } catch(err) {
         console.log(err);
-        return cb();
+        return cb(false);
       }
     }).catch((err) => {
       console.log(err);
-      return cb();
+      return cb(false);
     });
   } else
-    return cb();
+    return cb(true);
 }
 
 function update_address_count(cb) {
@@ -1147,9 +1228,9 @@ if (process.argv[2] == null || process.argv[2] == 'index' || process.argv[2] == 
 
       // check if the block start value was passed in and is an integer
       if (!isNaN(process.argv[4]) && Number.isInteger(parseFloat(process.argv[4]))) {
-        // Check if the block start value is less than 1
-        if (parseInt(process.argv[4]) < 1)
-          block_start = 1;
+        // Height zero is the genesis block and is valid.
+        if (parseInt(process.argv[4]) < 0)
+          block_start = 0;
         else
           block_start = parseInt(process.argv[4]);
       }
@@ -1207,7 +1288,8 @@ if (lib.is_locked([database]) == false) {
       }
     }
 
-    var dbString = 'mongodb://' + encodeURIComponent(settings.dbsettings.user);
+    const connectDatabase = function() {
+      var dbString = 'mongodb://' + encodeURIComponent(settings.dbsettings.user);
     dbString = dbString + ':' + encodeURIComponent(settings.dbsettings.password);
     dbString = dbString + '@' + settings.dbsettings.address;
     dbString = dbString + ':' + settings.dbsettings.port;
@@ -1215,8 +1297,26 @@ if (lib.is_locked([database]) == false) {
 
     mongoose.set('strictQuery', true);
     mongoose.set('updatePipeline', true);
+    mongoose.set('autoIndex', false);
 
-    mongoose.connect(dbString).then(() => {
+    mongoose.connect(dbString, {autoIndex: false}).then(async () => {
+      // Before any legacy startup helper can mutate Stats or trigger ordinary
+      // synchronization, validate the singleton durable fence with auto-indexing
+      // disabled. Only serialized index update may resume the fenced protocol.
+      const startupStatsRows = await Stats.find({coin: settings.coin.name})
+        .select({orphan_reconciliation: 1}).lean().exec();
+      if (!Array.isArray(startupStatsRows) || startupStatsRows.length !== 1)
+        throw new Error('Sync startup requires exactly one Stats document');
+      const startupStats = startupStatsRows[0];
+      if (startupStats.orphan_reconciliation != null) {
+        if (database !== 'index' || mode !== 'update')
+          throw new Error('Incomplete orphan reconciliation requires serialized index update resume');
+        await new Promise((resolve, reject) => {
+          sync_chain_tip_orphans((err) => err ? reject(err) : resolve());
+        });
+        startupOrphansChecked = true;
+      }
+    }).then(() => {
       if (database == 'index') {
         db.check_stats(settings.coin.name, function(exists) {
           if (exists == false) {
@@ -1251,7 +1351,11 @@ if (lib.is_locked([database]) == false) {
                 if (stats !== false) {
                   console.log(`${settings.localization.checking_blocks}.. ${settings.localization.please_wait}..`);
 
-                  blkSync.update_tx_db(settings.coin.name, block_start, stats.count, stats.txes, settings.sync.check_timeout, 1, function() {
+                  blkSync.update_tx_db(settings.coin.name, block_start, stats.count, stats.txes, settings.sync.check_timeout, 1, function(txes, err) {
+                    if (err) {
+                      console.error(`Fatal MariaCoin block check failure: ${err.message}`);
+                      stopSync = true;
+                    }
                     // check if the script stopped prematurely
                     if (stopSync) {
                       console.log('Block check was stopped prematurely');
@@ -1273,7 +1377,7 @@ if (lib.is_locked([database]) == false) {
                 // check if stats returned properly
                 if (stats !== false) {
                   // start the block sync
-                  block_sync(false, stats);
+                  block_sync(false, stats, startupOrphansChecked);
                 } else {
                   // update_db threw an error so exit
                   exit(1);
@@ -1323,8 +1427,8 @@ if (lib.is_locked([database]) == false) {
                 if (stats !== false) {
                   console.log(`${settings.localization.calculating_tx_count}.. ${settings.localization.please_wait}..`);
 
-                  // resetting the transaction counter requires a single lookup on the txes collection to find all txes that have a positive or zero total and 1 or more vout
-                  Tx.find({'total': {$gte: 0}, 'vout': { $gte: { $size: 1 }}}).countDocuments().then((count) => {
+                  // Stats.txes is the exact number of persisted Tx documents.
+                  Tx.countDocuments({}).then((count) => {
                     console.log('Found tx count: ' + count.toString());
 
                     Stats.updateOne({coin: settings.coin.name}, {
@@ -1355,10 +1459,10 @@ if (lib.is_locked([database]) == false) {
                   Tx.find({}, {blockindex:1, _id:0}).sort({blockindex: -1}).limit(1).exec().then((tx) => {
                     // check if any blocks exists
                     if (tx == null || tx.length == 0) {
-                      console.log('No blocks found. setting last blockindex to 0.');
+                      console.log('No blocks found. setting last blockindex to -1.');
 
                       Stats.updateOne({coin: settings.coin.name}, {
-                        last: 0
+                        last: -1
                       }).then(() => {
                         console.log('Last blockindex update complete');
                         exit(0);
@@ -1460,43 +1564,44 @@ if (lib.is_locked([database]) == false) {
 
                   // check if any peers should be saved
                   if (newPeers != null && newPeers.length > 0) {
-                    // set up the rate limit library to limit how fast external api calls are made
-                    const rateLimitLib = require('../lib/ratelimit');
-                    const rateLimit = new rateLimitLib.RateLimit(1, settings.sync.rate_limit.peer_sync_rate_limit, false);
-
-                    // wait before running the external geo location api call below
-                    rateLimit.schedule(function() {
-                      // call an external geo location api to determine which country the current peer is from
-                      lib.get_geo_location(address, function(error, geo) {
-                        // check if an error was returned
-                        if (error) {
-                          console.log(error);
-                          exit(1);
-                        } else if (geo == null || typeof geo != 'object') {
-                          console.log(`Error: geolocation api returned unexpected results for ip address ${address}`);
-                          exit(1);
-                        } else {
-                          // add the geolocation data to the new peer record(s)
-                          newPeers.forEach(function (newPeer) {
-                            newPeer.country = geo.country_name;
-                            newPeer.country_code = geo.country_code;
-                          });
-                          
-                          // add peers to peer array
-                          peerList = peerList.concat(newPeers);
-                          console.log('Add new peer %s%s [%s/%s]', address, (port == null || port == '' ? '' : ':' + port.toString()), (i + 1).toString(), body.length.toString());
-
-                          // check if the script is stopping
-                          if (stopSync) {
-                            // stop the loop
-                            loop({});
-                          } else {
-                            // move to next peer
-                            loop();
-                          }
-                        }
+                    const add_new_peers = function(country, country_code) {
+                      newPeers.forEach(function (newPeer) {
+                        newPeer.country = country;
+                        newPeer.country_code = country_code;
                       });
-                    });
+
+                      peerList = peerList.concat(newPeers);
+                      console.log('Add new peer %s%s [%s/%s]', address, (port == null || port == '' ? '' : ':' + port.toString()), (i + 1).toString(), body.length.toString());
+
+                      if (stopSync)
+                        loop({});
+                      else
+                        loop();
+                    };
+
+                    if (settings.sync.peer_geolocation_enabled == true) {
+                      // set up the rate limit library to limit how fast external api calls are made
+                      const rateLimitLib = require('../lib/ratelimit');
+                      const rateLimit = new rateLimitLib.RateLimit(1, settings.sync.rate_limit.peer_sync_rate_limit, false);
+
+                      // wait before running the external geo location api call below
+                      rateLimit.schedule(function() {
+                        // call an external geo location api to determine which country the current peer is from
+                        lib.get_geo_location(address, function(error, geo) {
+                          if (error) {
+                            console.log(error);
+                            exit(1);
+                          } else if (geo == null || typeof geo != 'object') {
+                            console.log(`Error: geolocation api returned unexpected results for ip address ${address}`);
+                            exit(1);
+                          } else {
+                            add_new_peers(geo.country_name, geo.country_code);
+                          }
+                        });
+                      });
+                    } else {
+                      add_new_peers('', '');
+                    }
                   } else {
                     console.log('Skip peer %s%s [%s/%s]', address, (port == null || port == '' ? '' : ':' + port.toString()), (i + 1).toString(), body.length.toString());
 
@@ -1513,20 +1618,35 @@ if (lib.is_locked([database]) == false) {
               });
             }, function() {
               // save the sorted list of peers to the local database
-              bulkUpsertPeers(peerList, function() {
-                // remove duplicates if necessary
-                removeDuplicatePeers(function() {
-                  // update network_last_updated value
-                  db.update_last_updated_stats(settings.coin.name, { network_last_updated: Math.floor(new Date() / 1000) }, function(cb) {
-                    // check if the script stopped prematurely
-                    if (stopSync)
-                      console.log('Peer sync was stopped prematurely');
-                    else
-                      console.log('Peer sync complete');
+              bulkUpsertPeers(peerList, function(upsert_success) {
+                if (!upsert_success) {
+                  console.log('Error: Cannot save network peers.');
+                  exit(1);
+                } else {
+                  // remove duplicates if necessary
+                  removeDuplicatePeers(function(deduplication_success) {
+                    if (!deduplication_success) {
+                      console.log('Error: Cannot remove duplicate network peers.');
+                      exit(1);
+                    } else {
+                      // update network_last_updated value
+                      db.update_last_updated_stats(settings.coin.name, { network_last_updated: Math.floor(new Date() / 1000) }, function(update_success) {
+                        if (!update_success) {
+                          console.log('Error: Cannot update peer sync timestamp.');
+                          exit(1);
+                        } else {
+                          // check if the script stopped prematurely
+                          if (stopSync)
+                            console.log('Peer sync was stopped prematurely');
+                          else
+                            console.log('Peer sync complete');
 
-                    exit(stopSync ? 1 : 0);
+                          exit(stopSync ? 1 : 0);
+                        }
+                      });
+                    }
                   });
-                });
+                }
               });
             });
           } else {
@@ -1564,16 +1684,26 @@ if (lib.is_locked([database]) == false) {
                 }
               });
             }, function() {
-              db.remove_old_masternodes(function() {
-                db.update_last_updated_stats(settings.coin.name, { masternodes_last_updated: Math.floor(new Date() / 1000) }, function(update_success) {
-                  // check if the script stopped prematurely
-                  if (stopSync)
-                    console.log('Masternode sync was stopped prematurely');
-                  else
-                    console.log('Masternode sync complete');
+              db.remove_old_masternodes(function(cleanup_success) {
+                if (!cleanup_success) {
+                  console.log('Error: Cannot remove stale masternodes.');
+                  exit(1);
+                } else {
+                  db.update_last_updated_stats(settings.coin.name, { masternodes_last_updated: Math.floor(new Date() / 1000) }, function(update_success) {
+                    if (!update_success) {
+                      console.log('Error: Cannot update masternode sync timestamp.');
+                      exit(1);
+                    } else {
+                      // check if the script stopped prematurely
+                      if (stopSync)
+                        console.log('Masternode sync was stopped prematurely');
+                      else
+                        console.log('Masternode sync complete');
 
-                  exit(stopSync ? 1 : 0);
-                });
+                      exit(stopSync ? 1 : 0);
+                    }
+                  });
+                }
               });
             });
           } else {
@@ -1705,6 +1835,20 @@ if (lib.is_locked([database]) == false) {
       console.log('Error: Unable to connect to database: %s', err);
       exit(1);
     });
+    };
+
+    if (database === 'index') {
+      blkSync.preflight_txindex(function(err) {
+        if (err) {
+          console.error(`Fatal MariaCoin txindex preflight failure: ${err.message}`);
+          exit(1);
+        } else {
+          connectDatabase();
+        }
+      });
+    } else {
+      connectDatabase();
+    }
   } else {
     // another script process is currently running
     console.log("Sync aborted");

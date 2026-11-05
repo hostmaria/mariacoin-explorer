@@ -151,7 +151,7 @@ function send_claimaddress_data(res, hash, claim_name) {
       customHash: get_custom_hash(),
       styleHash: get_style_hash(),
       themeHash: get_theme_hash(),
-      page_title_prefix: settings.coin.name + ' Claim Wallet Address' + (hash == null || hash == '' ? '' : ' ' + hash)
+      page_title_prefix: settings.coin.name + ' Claim Address' + (hash == null || hash == '' ? '' : ' ' + hash)
     }
   );
 }
@@ -414,8 +414,13 @@ function route_get_claim_form(res, hash) {
         send_claimaddress_data(res, hash, (claim_name == null ? '' : claim_name));
       });
     }
-  } else
-    route_get_address(res, hash);
+  } else {
+    res.status(404).render('error', {
+      message: 'Not Found',
+      error: {},
+      page_title_prefix: settings.coin.name + ' Page Not Found'
+    });
+  }
 }
 
 router.get('/', function(req, res) {

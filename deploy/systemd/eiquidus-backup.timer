@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily MariaCoin explorer backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+Unit=eiquidus-backup.service
+
+[Install]
+WantedBy=timers.target

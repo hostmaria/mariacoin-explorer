@@ -1,229 +1,198 @@
 extends layout
 
 block content
-  - var selected_captcha_object = null
-  - var selected_captcha_name = ''
-  if settings.claim_address_page.enable_captcha == true
-    each captcha, name in settings.captcha
-      if selected_captcha_object == null && captcha != null && captcha.enabled == true
-        - selected_captcha_object = captcha
-        - selected_captcha_name = name
   script.
     $(document).ready(function () {
-        $('#claimInstructions').on('show.bs.collapse', function () {
-          $('#showClaimInstructions').html('<i class="fa-solid fa-angle-down" style="margin-right:5px;"></i><span>Hide claim instructions</span>');
-        }).on('hide.bs.collapse', function () {
-          $('#showClaimInstructions').html('<i class="fa-solid fa-angle-up" style="margin-right:5px;"></i><span>Show claim instructions</span>');
-        }).on('shown.bs.collapse', function () {
-          fixFooterHeightAndPosition();
-        }).on('hidden.bs.collapse', function () {
-          fixFooterHeightAndPosition();
-        });
-        $('#claimForm').on('submit', function (e) {
-          e.preventDefault();
-          var address = $('input#address').val();
-          var message = $('input#message').val();
-          var signature = $('input#signature').val();
-          var recaptcha2 = ($('#g-recaptcha-response').length > 0 ? $('#g-recaptcha-response').val() : '');
-          var hcaptcha = ($('textarea[name^="h-captcha-response"]').length > 0 ? $('textarea[name^="h-captcha-response"]').val() : '');
-          
-          if (address == null || address.trim().length == 0) {
-            showClaimAlert('warning', 'Please enter the wallet address you wish to claim', false);
-            $('input#address').focus();
-          } else if (signature == null || signature.trim().length == 0) {
-            showClaimAlert('warning', 'Please enter the signature value from your wallet software', false);
-            $('input#signature').focus();
-          } else if (
-            (
-              '#{selected_captcha_name}' == 'google_recaptcha2' &&
-              '#{settings.captcha.google_recaptcha2.captcha_type}' == 'checkbox' &&
-              $('#g-recaptcha-response').length > 0 &&
-              recaptcha2 == ''
-            ) ||
-            (
-              $('textarea[name^="h-captcha-response"]').length > 0 &&
-              hcaptcha == ''
-            )
-          ) {
-            showClaimAlert('warning', 'The captcha validation has not been set', false);
-          } else {
-            $('button.btn-success').attr('disabled', true);
+      const csrfToken = $('#claim-security').data('csrf-token');
+      let currentChallenge = null;
 
-            if ('#{selected_captcha_name}' == 'google_recaptcha2' && '#{settings.captcha.google_recaptcha2.captcha_type}' == 'invisible') {
-              grecaptcha.execute();
-            } else if ('#{selected_captcha_name}' == 'google_recaptcha3') {
-              grecaptcha.ready(function() {
-                grecaptcha.execute('#{(selected_captcha_name != '' && settings.captcha[selected_captcha_name].site_key != null ? settings.captcha[selected_captcha_name].site_key : '')}', {action: 'submit'}).then(function(token) {
-                  submitForm(token);
-                });
-              });
-            } else if (recaptcha2 != '') {
-              submitForm(recaptcha2);
-            } else if (hcaptcha != '') {
-              submitForm(hcaptcha);
-            } else {
-              submitForm('');
-            }
-          }
+      function showClaimAlert(alertClass, title, message) {
+        const alert = $('<div>', {
+          'class': 'alert alert-' + alertClass + ' alert-dismissible fade show',
+          'role': 'alert'
         });
-        if ('!{hash}' != 'null' && '!{hash}' != '') {
-          $('<div id="claimAlert"></div>').insertBefore('#claimForm');
-          $('#claimAlert').html(generateAlertHTML('info', true, ('!{claim_name}' == '' ? 'Unc' : 'C') + 'laimed address', '<strong>!{hash}</strong> is currently ' + ('!{claim_name}' == '' ? 'un' : '') + 'claimed' + ('!{claim_name}' == '' ? '' : ' as <strong>' + displayAsText('!{claim_name}') + '.</strong>')));
-        }
-        if (#{settings.shared_pages.page_header.page_title_image.enable_animation} == true && #{settings.claim_address_page.page_header.show_img} == true)
-          startRotateElement('img#header-img');
-      });
-      function displayAsText(str) {
-        return str.replace(/</g, '&#60;').replace(/>/g, '&#62;');
-      }
-      function showClaimAlert(claimClass, warnMsg, removedClaim) {
-        if ($('#claimAlert').length == 0)
-          $('<div id="claimAlert"></div>').insertBefore('#claimForm');
-        $('#claimAlert').html(generateAlertHTML(claimClass, true, (claimClass == 'success' ? (removedClaim ? 'Address claim removed successfully' : 'Address claimed successfully') : (claimClass == 'danger' ? 'Failed to claim address' : 'Required field missing')), (claimClass == 'success' ? '<strong>' + $('input#address').val() + '</strong> will now be referred to as <strong>' + (removedClaim ? $('input#address').val() : displayAsText($('#message').val())) + '</strong> throughout the website' : warnMsg) + '.'));
+        const close = $('<button>', {
+          'class': 'btn-close',
+          'type': 'button',
+          'data-bs-dismiss': 'alert',
+          'aria-label': 'Close'
+        });
+        alert.append(close);
+        alert.append($('<div>').append($('<strong>').text(title)));
+        alert.append($('<div>', {'class': 'mt-1'}).text(message));
+        $('#claimAlert').empty().append(alert);
         fixFooterHeightAndPosition();
       }
-      function generateAlertHTML(alertClass, allowDismiss, headerText, msgText) {
-        return '<div class="alert alert-' + alertClass + (allowDismiss ? ' alert-dismissible fade show' : '') + '" role="alert">' +
-          (allowDismiss ? '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' : '') + 
-          '<div' + (msgText == null || msgText == '' ? '' : ' class="cardSpacer"') + '>' +
-          '<span class="fa-solid ' + (alertClass == 'success' ? 'fa-circle-check' : (alertClass == 'danger' ? 'fa-circle-exclamation' : (alertClass == 'info' ? 'fa-circle-info' : 'fa-triangle-exclamation'))) + '" style="margin-right:5px"></span>' +
-          '<strong>' + headerText + '</strong>' +
-          '</div>' +
-          (msgText == null || msgText == '' ? '' : '<span>' + msgText + '</span>') +
-          '</div>';
+
+      function clearChallenge() {
+        currentChallenge = null;
+        $('#challengeId').val('');
+        $('#signingMessage').val('');
+        $('#signature').val('');
+        $('#challengeExpiry').text('');
+        $('#claim-signature-step').addClass('d-none');
       }
-      function submitForm(captchaData) {
-        const url = '/claim';
 
-        let postData = {
-          'address': $('input#address').val(),
-          'message': $('input#message').val(),
-          'signature': $('input#signature').val()
-        };
-
-        if ('#{selected_captcha_name}' != '' && captchaData != '')
-          postData['#{selected_captcha_name}'] = captchaData;
-
-        $.ajax({
-          type: 'post',
-          url: url,
-          data: postData
-        })
-        .done(function(data) {
-          showClaimAlert((data.status == 'success' ? 'success' : 'danger'), data.message, (data.status == 'success' && message == ''));
-
-          if (
-            '#{selected_captcha_name}' == 'google_recaptcha2' &&
-            '#{settings.captcha.google_recaptcha2.captcha_type}' == 'checkbox'
-          ) {
-            // clear out the captcha to allow the form to be submitted again
-            grecaptcha.reset();
-          } else if (
-            '#{selected_captcha_name}' == 'hcaptcha'
-          ) {
-            // clear out the captcha to allow the form to be submitted again
-            hcaptcha.reset()
-          }
-
-          $('button.btn-success').attr('disabled', false);
+      async function postJson(url, data) {
+        const response = await fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: JSON.stringify(Object.assign({csrfToken: csrfToken}, data))
         });
+        const body = await response.json().catch(function () {
+          return {status: 'failed', message: 'The explorer returned an invalid response'};
+        });
+        if (!response.ok || body.status !== 'success')
+          throw new Error(body.message || 'The request could not be completed');
+        return body;
       }
-      function onSubmit(token) {
-        submitForm(token);
 
-        // ensure the onSubmit event can fire again without needing to reload the page in the event that the server returns an error and the form must be submitted again
-        grecaptcha.reset();
+      $('#address, #displayName').on('input', clearChallenge);
 
-        $('button.btn-success').attr('disabled', false);
-      }
+      $('#generateChallenge').on('click', async function () {
+        const button = $(this);
+        button.prop('disabled', true);
+        $('#claimAlert').empty();
+        clearChallenge();
+
+        try {
+          const body = await postJson('/claim/challenge', {
+            address: $('#address').val(),
+            displayName: $('#displayName').val()
+          });
+          currentChallenge = body.challenge;
+          $('#address').val(currentChallenge.address);
+          $('#displayName').val(currentChallenge.displayName);
+          $('#challengeId').val(currentChallenge.challengeId);
+          $('#signingMessage').val(currentChallenge.message);
+          $('#challengeExpiry').text('This one-time message expires at ' + new Date(currentChallenge.expiresAt).toLocaleString() + '.');
+          $('#claim-signature-step').removeClass('d-none');
+          $('#signingMessage').focus().select();
+          showClaimAlert('info', 'Signing message ready', 'Copy the complete message exactly as shown, sign it in your MariaCoin wallet, then paste only the resulting signature below.');
+        } catch (err) {
+          showClaimAlert('danger', 'Unable to prepare claim', err.message);
+        } finally {
+          button.prop('disabled', false);
+        }
+      });
+
+      $('#copySigningMessage').on('click', async function () {
+        const message = $('#signingMessage').val();
+        try {
+          await navigator.clipboard.writeText(message);
+          showClaimAlert('success', 'Message copied', 'The exact signing message was copied to your clipboard.');
+        } catch (err) {
+          $('#signingMessage').focus().select();
+          showClaimAlert('warning', 'Copy manually', 'Clipboard access was unavailable. The complete message has been selected for you.');
+        }
+      });
+
+      $('#claimForm').on('submit', async function (event) {
+        event.preventDefault();
+        const button = $('#submitClaim');
+
+        if (!currentChallenge) {
+          showClaimAlert('warning', 'Generate a signing message', 'Generate a new one-time message before submitting a signature.');
+          return;
+        }
+
+        button.prop('disabled', true);
+        try {
+          const body = await postJson('/claim', {
+            challengeId: currentChallenge.challengeId,
+            address: currentChallenge.address,
+            displayName: currentChallenge.displayName,
+            signature: $('#signature').val()
+          });
+          const result = body.claim;
+          showClaimAlert('success', result.removed ? 'Display name removed' : 'Address claim saved', result.removed ? 'The explorer will show the wallet address without a self-claimed display name.' : result.displayName + ' is now shown as a self-claimed display name alongside ' + result.address + '.');
+          clearChallenge();
+        } catch (err) {
+          clearChallenge();
+          showClaimAlert('danger', 'Claim not saved', err.message + ' Generate a new signing message before trying again.');
+        } finally {
+          button.prop('disabled', false);
+        }
+      });
+
+      if (#{settings.shared_pages.page_header.page_title_image.enable_animation} == true && #{settings.claim_address_page.page_header.show_img} == true)
+        startRotateElement('img#header-img');
+    });
+  #claim-security(data-csrf-token=claimCsrfToken)
   .col-xs-12.col-md-12
     if settings.claim_address_page.page_header.show_img == true || settings.claim_address_page.page_header.show_title == true || settings.claim_address_page.page_header.show_description == true
       #page-header-container(style='align-items:' + (settings.claim_address_page.page_header.show_img == true && settings.claim_address_page.page_header.show_title == true && settings.claim_address_page.page_header.show_description == true ? 'flex-start' : 'center'))
         if settings.claim_address_page.page_header.show_img == true
           #header-img-container
-            img#header-img(src=(settings.shared_pages.page_header.page_title_image == null || settings.shared_pages.page_header.page_title_image.image_path == null || settings.shared_pages.page_header.page_title_image.image_path == '' ? '/img/page-title-img.png' : settings.shared_pages.page_header.page_title_image.image_path))
+            img#header-img(src=(settings.shared_pages.page_header.page_title_image == null || settings.shared_pages.page_header.page_title_image.image_path == null || settings.shared_pages.page_header.page_title_image.image_path == '' ? '/img/page-title-img.png' : settings.shared_pages.page_header.page_title_image.image_path), alt='MariaCoin logo')
         #page-title-container
           if settings.claim_address_page.page_header.show_title == true
-            h3#page-title #{settings.localization.claim_title.replace('{1}', settings.coin.name)}
+            h3#page-title Claim a MariaCoin address
           if settings.claim_address_page.page_header.show_description == true
-            if settings.claim_address_page.page_header.show_title != true
-              #page-title-container
-                .sub-page-header.text-muted=settings.localization.claim_description.replace('{1}', settings.coin.name)
-            else
-              .sub-page-header.text-muted=settings.localization.claim_description.replace('{1}', settings.coin.name)
+            .sub-page-header.text-muted Prove control of an indexed MariaCoin address and add a self-claimed public display name.
       .cardSpacer.clearfix
+
+    .alert.alert-warning(role='alert')
+      strong Security warning
+      p.mb-1.mt-2 Never enter or share your private key or seed phrase. This explorer asks only for a public wallet address, a server-issued message and the signature created by your wallet.
+      p.mb-0 Verify that you are using https://explorer.mariacoin.com before signing anything.
+
+    .alert.alert-info(role='alert')
+      strong What a claim means
+      p.mb-1.mt-2 A valid signature proves that the signer controlled the address when the message was signed. It does not transfer coins and does not grant the explorer access to your wallet.
+      p.mb-1 No transaction or network fee is involved.
+      p.mb-0 Self-claimed names do not verify a person's identity, company, official status or endorsement. The wallet address remains visible alongside every self-claimed name.
+
     .card.card-default.border-0.cardSpacer
       .card-header
-        strong Claim Wallet Address
+        strong How to claim an address
       .card-body
-        a#showClaimInstructions.instructions.badge.bg-primary(href='#claimInstructions', style='font-size:100%;margin-bottom:15px;', data-bs-toggle='collapse' role='button' aria-expanded='false' aria-controls='claimInstructions')
-          i.fa-solid.fa-angle-up(style='margin-right:5px;')
-          span Show claim instructions
-        div#claimInstructions.collapse
-          div.alert.alert-primary
-            div
-              span Use the
-              span.fw-bold  Sign Message
-              span  feature from your
-              span.fw-bold  #{settings.coin.name}
-              span  wallet to verify ownership of a wallet address that belongs to you.
-            br
-            div Enter the following data into the wallet software:
-            br
-            div
-              span.fw-bold Address:
-              if hash == null || hash == ''
-                span=' <wallet address from the form below>'
-              else
-                span  #{hash}
-            div
-              span.fw-bold Message:
-              span=' <display name from the form below>'
-            br
-            div
-              span Click the
-              span.fw-bold  Sign Message
-              span  button in the wallet, and copy/paste the resulting
-              span.fw-bold  Signature
-              span  at the bottom of this form.
-            br
-            div
-              span Finally, click the
-              span.fw-bold  Claim
-              span  button below to claim your address, which will display your custom display name instead of the default wallet address on this site.
-            br
-            div
-              span.fw-bold NOTE:
-              span  You can update your claimed address at any time, as often as you wish. To remove a previously claimed display name, simply sign a blank message to return the address back to its original value.
-        form#claimForm
+        ol.mb-0
+          li Enter an indexed transparent MariaCoin address beginning with M and an optional display name.
+          li Select Generate one-time signing message.
+          li Copy the complete message exactly as shown and use the Sign Message feature in the MariaCoin Core wallet that controls the address.
+          li Paste only the resulting Base64 signature into this page.
+          li Submit the claim. The one-time message expires after ten minutes and cannot be reused.
+        p.mt-3.mb-0 To update a name, repeat these steps with the new name. To remove a name, leave Display name blank and sign the generated removal message.
+
+    .card.card-default.border-0.cardSpacer
+      .card-header
+        strong Claim address
+      .card-body
+        #claimAlert
+        form#claimForm(autocomplete='off')
           .form-group
             fieldset.entryField
-              label.form-label(for='address') Wallet Address
-              if hash == null || hash == ''
-                input#address.form-control(type='text', maxlength='70')
-              else
-                input#address.form-control(type='text', value=hash, readonly='readonly', maxlength='70')
+              label.form-label(for='address') Wallet address
+              input#address.form-control(type='text', value=(hash == null ? '' : hash), maxlength='50', required='required', spellcheck='false', autocapitalize='off', autocomplete='off', aria-describedby='addressHelp')
+              #addressHelp.form-text Only indexed transparent MariaCoin addresses beginning with M can be claimed.
           .form-group
             fieldset.entryField
-              label.form-label.mt-3(for='message') Display Name
-              input#message.form-control(type='text', placeholder='Display Name', maxlength='50')
-          .form-group
-            fieldset.entryField
-              label.form-label.mt-3(for='signature') Signature
-              input#signature.form-control.mb-3(type='text', placeholder='Signature', maxlength='100')
-          if settings.claim_address_page.enable_captcha == true && selected_captcha_object != null
-            case selected_captcha_name
-              when 'google_recaptcha2'
-                if settings.captcha.google_recaptcha2.captcha_type == 'invisible'
-                  div#recaptcha.g-recaptcha(data-sitekey=settings.captcha[selected_captcha_name].site_key, data-callback='onSubmit' data-size='invisible')
-                else
-                  .form-group
-                    fieldset.entryField
-                      div(class='g-recaptcha mb-3', data-sitekey=settings.captcha[selected_captcha_name].site_key)
-              when 'hcaptcha'
-                .form-group
-                  fieldset.entryField
-                    div.h-captcha(data-sitekey=settings.captcha[selected_captcha_name].site_key)
-          .form-group
-            fieldset.entryField
-              button.btn.btn-success(type='submit') Claim
+              label.form-label.mt-3(for='displayName') Display name
+              input#displayName.form-control(type='text', value=(claim_name == null ? '' : claim_name), maxlength='40', spellcheck='false', autocomplete='off', aria-describedby='displayNameHelp')
+              #displayNameHelp.form-text Maximum 40 characters. Markup, control characters and reserved official terms are rejected. Leave blank to remove an existing name.
+          .form-group.mt-3
+            button#generateChallenge.btn.btn-primary(type='button')
+              span.fa-solid.fa-file-signature.me-2
+              | Generate one-time signing message
+
+          #claim-signature-step.d-none.mt-4
+            hr
+            .form-group
+              label.form-label(for='signingMessage') Exact message to sign
+              textarea#signingMessage.form-control(rows='10', readonly='readonly', spellcheck='false', aria-describedby='challengeExpiry')
+              #challengeExpiry.form-text
+              input#challengeId(type='hidden')
+            button#copySigningMessage.btn.btn-outline-primary.mt-2(type='button')
+              span.fa-solid.fa-copy.me-2
+              | Copy complete message
+            .form-group
+              fieldset.entryField
+                label.form-label.mt-3(for='signature') Wallet-generated signature
+                input#signature.form-control(type='text', maxlength='128', required='required', spellcheck='false', autocapitalize='off', autocomplete='off', placeholder='Paste only the Base64 signature', aria-describedby='signatureHelp')
+                #signatureHelp.form-text The explorer verifies this signature server-side through a narrowly scoped private verifymessage call. Generic RPC remains unavailable publicly.
+            .form-group.mt-3
+              button#submitClaim.btn.btn-success(type='submit')
+                span.fa-solid.fa-shield-halved.me-2
+                | Verify and save claim

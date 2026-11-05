@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule MariaCoin eIquidus sync
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=eiquidus-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -8,7 +8,10 @@ const custom_min_filename = 'custom.min.css'
 const theme_selector_template_text = `$theme-name: "replace";`;
 const settings = require('../lib/settings');
 let compile_theme_css = false;
-let compile_custom_css = false;
+// custom.min.css is shared between immutable releases, so release archive
+// mtimes cannot reliably indicate whether custom.scss changed. Compile it on
+// every managed prestart to ensure the active release owns the rendered CSS.
+let compile_custom_css = true;
 let theme_name = '';
 
 // check if the theme selector file exists
@@ -36,21 +39,6 @@ if (!fs.existsSync(`${css_path}${theme_selector_filename}`)) {
       // style file was modified since the style min file was created, so it is necessary to compile the css
       compile_theme_css = true;
     }
-  }
-}
-
-// check if the minified custom file exists
-if (!fs.existsSync(`${css_path}${custom_min_filename}`)) {
-  // the minified custom file does not exist, so it is necessary to compile the css 
-  compile_custom_css = true;
-} else {
-  const custom_stats = fs.statSync(`${css_path}${custom_filename}`);
-  const custom_min_stats = fs.statSync(`${css_path}${custom_min_filename}`);
-
-  // check if the custom file was last modified after the minified custom file
-  if (custom_stats.mtime > custom_min_stats.mtime) {
-    // custom file was modified since the custom min file was created, so it is necessary to compile the css
-    compile_custom_css = true;
   }
 }
 

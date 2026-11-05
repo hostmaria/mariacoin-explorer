@@ -13,7 +13,8 @@
     "start-pm2-debug": "npm run prestart \"pm2 development\" && pm2 logs",
     "stop-pm2": "pm2 stop explorer",
     "reload-pm2": "npm run prestart \"pm2 production reload\"",
-    "test": "node ./node_modules/jasmine/bin/jasmine.js test/*Spec.js",
+    "test": "node ./node_modules/jasmine/bin/jasmine.js test/explorerSpec.js test/mariacoinV551Spec.js test/claimSecuritySpec.js test/orphanTipsSpec.js",
+    "test:markets-live": "node ./node_modules/jasmine/bin/jasmine.js test/marketSpec.js",
     "prestart": "node ./scripts/prestart.js",
     "sync-blocks": "node ./scripts/sync.js index update",
     "sync-markets": "node ./scripts/sync.js market",
@@ -37,6 +38,7 @@
     "debug": "^4.4.0",
     "decimal.js": "^10.6.0",
     "express": "^5.1.0",
+    "geoip-lite": "^2.0.3",
     "intl": "^1.2.5",
     "jsonminify": "^0.4.2",
     "mongoose": "^9.2.4",
@@ -51,5 +53,11 @@
     "forever": "^4.0.3",
     "jasmine": "^6.1.0",
     "pm2": "^7.0.1"
+  },
+  "overrides": {
+    "postman-request": {
+      "qs": "6.15.2",
+      "uuid": "11.1.1"
+    }
   }
 }

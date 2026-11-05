@@ -1455,12 +1455,12 @@ html(lang='en')
                 if settings.masternodes_page.enabled == true
                   li#masternodes.nav-item
                     a.nav-link(href='/masternodes')
-                      span.fa-solid.fa-share-nodes
+                      span.fa-solid.fa-server
                       span.margin-left-5 Masternodes
                 if settings.movement_page.enabled == true
                   li#movement.nav-item
                     a.nav-link(href='/movement')
-                      span.fa-regular.fa-money-bill-1
+                      span.fa-solid.fa-right-left
                       span.margin-left-5 #{settings.localization.menu_movement}
                 if settings.network_page.enabled == true && (settings.network_page.connections_table.enabled == true || settings.network_page.addnodes_table.enabled == true || settings.network_page.onetry_table.enabled == true)
                   li#network.nav-item
@@ -1470,7 +1470,7 @@ html(lang='en')
                 if settings.richlist_page.enabled == true
                   li#richlist.nav-item
                     a.nav-link(href='/richlist')
-                      span.fa-brands.fa-btc
+                      span.fa-solid.fa-list-ol
                       span.margin-left-5 #{settings.localization.menu_richlist}
                 if settings.markets_page.enabled == true
                   if settings.markets_page.show_market_dropdown_menu == true && settings.market_count > 1
@@ -1505,12 +1505,12 @@ html(lang='en')
                 if settings.api_page.enabled == true
                   li#info.nav-item
                     a.nav-link(href='/info')
-                      span.fa-solid.fa-circle-info
+                      span.fa-solid.fa-code
                       span.margin-left-5 #{settings.localization.menu_api}
                 if settings.claim_address_page.show_header_menu == true && settings.claim_address_page.enabled == true
                   li#claim-address.nav-item
                     a.nav-link(href='/claim')
-                      span.fa-regular.fa-address-card
+                      span.fa-solid.fa-signature
                       span.margin-left-5 #{settings.localization.menu_claim_address}
                 if settings.orphans_page.enabled == true
                   li#orphans.nav-item
@@ -1580,12 +1580,12 @@ html(lang='en')
               if settings.masternodes_page.enabled == true
                 li#masternodes.nav-item(alt="Masternodes", title="Masternodes", data-bs-toggle='tooltip', data-bs-placement='right')
                   a.nav-link(href='/masternodes')
-                    span.nav-icon.fa-solid.fa-share-nodes
+                    span.nav-icon.fa-solid.fa-server
                     span.margin-left-5 Masternodes
               if settings.movement_page.enabled == true
                 li#movement.nav-item(alt=settings.localization.menu_movement, title=settings.localization.menu_movement, data-bs-toggle='tooltip', data-bs-placement='right')
                   a.nav-link(href='/movement')
-                    span.nav-icon.fa-regular.fa-money-bill-1
+                    span.nav-icon.fa-solid.fa-right-left
                     span.margin-left-5 #{settings.localization.menu_movement}
               if settings.network_page.enabled == true && (settings.network_page.connections_table.enabled == true || settings.network_page.addnodes_table.enabled == true || settings.network_page.onetry_table.enabled == true)
                 li#network.nav-item(alt=settings.localization.menu_network, title=settings.localization.menu_network, data-bs-toggle='tooltip', data-bs-placement='right')
@@ -1595,7 +1595,7 @@ html(lang='en')
               if settings.richlist_page.enabled == true
                 li#richlist.nav-item(alt=settings.localization.menu_richlist, title=settings.localization.menu_richlist, data-bs-toggle='tooltip', data-bs-placement='right')
                   a.nav-link(href='/richlist')
-                    span.nav-icon.fa-brands.fa-btc
+                    span.nav-icon.fa-solid.fa-list-ol
                     span.margin-left-5 #{settings.localization.menu_richlist}
               if settings.markets_page.enabled == true
                 if settings.markets_page.show_market_dropdown_menu == true && settings.market_count > 1
@@ -1630,12 +1630,12 @@ html(lang='en')
               if settings.api_page.enabled == true
                 li#info.nav-item(alt=settings.localization.menu_api, title=settings.localization.menu_api, data-bs-toggle='tooltip', data-bs-placement='right')
                   a.nav-link(href='/info')
-                    span.nav-icon.fa-solid.fa-circle-info
+                    span.nav-icon.fa-solid.fa-code
                     span.margin-left-5 #{settings.localization.menu_api}
               if settings.claim_address_page.show_header_menu == true && settings.claim_address_page.enabled == true
                 li#claim-address.nav-item(alt=settings.localization.menu_claim_address, title=settings.localization.menu_claim_address, data-bs-toggle='tooltip', data-bs-placement='right')
                   a.nav-link(href='/claim')
-                    span.nav-icon.fa-regular.fa-address-card
+                    span.nav-icon.fa-solid.fa-signature
                     span.margin-left-5 #{settings.localization.menu_claim_address}
               if settings.orphans_page.enabled == true
                 li#orphans.nav-item(alt=settings.localization.menu_orphans, title=settings.localization.menu_orphans, data-bs-toggle='tooltip', data-bs-placement='right')

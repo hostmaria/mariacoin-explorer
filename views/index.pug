@@ -34,6 +34,11 @@ block content
       var displayLengthMax = setting_maxTxCount;
     else
       var displayLengthMax = setting_txPerPage;
+    function escapeClaimText(value) {
+      const element = document.createElement('div');
+      element.textContent = value == null ? '' : String(value);
+      return element.innerHTML;
+    }
     $(document).ready(function() {
       var rtable = $('#recent-table').dataTable({
         autoWidth: false,
@@ -92,7 +97,9 @@ block content
 
             for (i = 0; i < extracted_by.length; i++) {
               extracted_contents += '<div style="overflow: auto;">';
-              extracted_contents += `<a href='/address/${extracted_by[i].a_id}'>${(extracted_by[i].claimname == '' ? extracted_by[i].a_id : extracted_by[i].claimname)}</a>`;
+              const extractedAddress = escapeClaimText(extracted_by[i].a_id);
+              const extractedLabel = extracted_by[i].claimname == '' ? extractedAddress : escapeClaimText(extracted_by[i].claimname) + ' (' + extractedAddress + ', self-claimed)';
+              extracted_contents += `<a href='/address/${encodeURIComponent(extracted_by[i].a_id)}'>${extractedLabel}</a>`;
 
               if (labels[extracted_by[i].a_id] != null && labels[extracted_by[i].a_id].enabled == true) {
                 extracted_contents += `<label class="badge bg-${(labels[extracted_by[i].a_id].type == null || labels[extracted_by[i].a_id].type == '' ? 'default' : labels[extracted_by[i].a_id].type)} float-end d-none d-${active == 'richlist' ? 'md' : (active == 'tx' ? 'lg' : 'sm')}-block" style="margin-left:15px;margin-bottom:0;">${labels[extracted_by[i].a_id].label}`;

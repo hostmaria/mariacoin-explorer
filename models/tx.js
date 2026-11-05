@@ -11,6 +11,14 @@ const TxSchema = new Schema({
   blockhash: { type: String, index: true },
   blockindex: {type: Number, default: 0, index: true},
   tx_type: { type: String, default: null },
+  staker: { type: String, default: null, index: true },
+  stakers: { type: [String], default: [], index: true },
+  valueBalance: { type: Schema.Types.Decimal128, default: null },
+  valueBalanceSat: { type: Schema.Types.Decimal128, default: null },
+  shieldedSpendCount: { type: Number, default: 0 },
+  shieldedOutputCount: { type: Number, default: 0 },
+  vShieldSpend: { type: Array, default: [] },
+  vShieldOutput: { type: Array, default: [] },
   op_return: { type: String, default: null },
   algo: { type: String, default: null }
 }, {id: false});

@@ -1,1 +1,319 @@
-/* Add custom css rules here */
+/* Simplified $maria coin colour palette */
+:root {
+  --maria-green-dark: #11290C;
+  --maria-green: #225018;
+  --maria-gold: #AE8422;
+  --maria-gold-hover: #D1A132;
+  --text-primary: #F5F1E7;
+  --text-secondary: #A7ADA2;
+  --border: #35642A;
+  --danger: #C94F4F;
+
+  /* Layered surfaces derived only from the approved palette. */
+  --surface-raised: color-mix(in srgb, var(--maria-green-dark) 90%, var(--maria-green) 10%);
+  --surface-subtle: color-mix(in srgb, var(--maria-green-dark) 96%, var(--maria-green) 4%);
+  --border-subtle: color-mix(in srgb, var(--border) 58%, transparent);
+
+  --bs-primary: var(--maria-green);
+  --bs-primary-rgb: 34, 80, 24;
+  --bs-secondary: var(--text-secondary);
+  --bs-secondary-rgb: 167, 173, 162;
+  --bs-success: var(--maria-green);
+  --bs-success-rgb: 34, 80, 24;
+  --bs-warning: var(--maria-gold-hover);
+  --bs-warning-rgb: 209, 161, 50;
+  --bs-danger: var(--danger);
+  --bs-danger-rgb: 201, 79, 79;
+  --bs-dark: var(--maria-green-dark);
+  --bs-dark-rgb: 17, 41, 12;
+  --bs-body-bg: var(--maria-green-dark);
+  --bs-body-color: var(--text-primary);
+  --bs-link-color: var(--maria-gold);
+  --bs-link-hover-color: var(--maria-gold-hover);
+  --bs-border-color: var(--border);
+}
+
+html,
+body,
+#body-container,
+#main-container {
+  background-color: var(--maria-green-dark);
+  color: var(--text-primary);
+}
+
+a,
+.btn-link,
+.page-link {
+  color: var(--maria-gold-hover);
+}
+
+a:hover,
+a:focus,
+.btn-link:hover,
+.btn-link:focus,
+.page-link:hover,
+.page-link:focus {
+  color: var(--text-primary);
+}
+
+.text-muted,
+.sub-page-header,
+.form-text,
+small,
+.small {
+  color: var(--text-secondary) !important;
+}
+
+.bg-primary,
+header#main-header-side,
+#inner-header-side,
+#side-nav-bar,
+nav.side-nav {
+  background-color: var(--maria-green) !important;
+}
+
+#footer-container,
+.footer {
+  background-color: var(--surface-raised) !important;
+}
+
+#side-nav-bar,
+header#main-header-side,
+#footer-container,
+.navbar,
+.card,
+.card-header,
+.card-footer,
+.table,
+.table > :not(caption) > * > *,
+.form-control,
+.form-select,
+.input-group-text,
+.dropdown-menu,
+.modal-content,
+.page-link {
+  border-color: var(--border) !important;
+}
+
+.form-control,
+.form-select,
+.input-group-text {
+  border-color: var(--maria-gold-hover) !important;
+}
+
+.navbar-dark .navbar-nav .nav-link,
+#side-nav-bar .nav-link,
+.footer,
+.footer a {
+  color: var(--text-primary);
+}
+
+#side-nav-bar .nav-link:hover,
+#side-nav-bar .nav-link:focus,
+#side-nav-bar .nav-link.active,
+.navbar-dark .navbar-nav .nav-link:hover,
+.navbar-dark .navbar-nav .nav-link:focus,
+.navbar-dark .navbar-nav .nav-link.active {
+  background-color: var(--maria-green-dark);
+  color: var(--maria-gold-hover);
+}
+
+.card,
+.dropdown-menu,
+.modal-content,
+.page-link,
+.form-control,
+.form-select,
+.input-group-text {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.card,
+.dropdown-menu,
+.modal-content {
+  border-radius: 8px;
+}
+
+.card.card-default {
+  border: 1px solid var(--border-subtle) !important;
+  overflow: hidden;
+}
+
+.card-header,
+.card-footer,
+.table thead th,
+.table .table-dark,
+.table-dark {
+  background-color: color-mix(in srgb, var(--maria-green-dark) 72%, var(--maria-green) 28%);
+  color: var(--text-primary);
+}
+
+.card-header,
+.card-footer {
+  background-color: color-mix(in srgb, var(--maria-green-dark) 72%, var(--maria-green) 28%);
+}
+
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--text-primary);
+  --bs-table-border-color: var(--border-subtle);
+  --bs-table-striped-bg: rgba(34, 80, 24, 0.14);
+  --bs-table-striped-color: var(--text-primary);
+  --bs-table-hover-bg: rgba(174, 132, 34, 0.11);
+  --bs-table-hover-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.table > :not(caption) > * > * {
+  border-color: var(--border-subtle) !important;
+  padding-top: 0.72rem;
+  padding-bottom: 0.72rem;
+}
+
+.table tbody a {
+  color: var(--text-primary);
+  text-decoration-color: transparent;
+  transition: color 120ms ease, text-decoration-color 120ms ease;
+}
+
+.table tbody a:hover,
+.table tbody a:focus {
+  color: var(--maria-gold-hover);
+  text-decoration-color: currentColor;
+}
+
+.table thead th {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.form-control::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: var(--maria-green-dark);
+  border-color: var(--maria-gold-hover) !important;
+  box-shadow: 0 0 0 0.2rem rgba(209, 161, 50, 0.2);
+  color: var(--text-primary);
+}
+
+.btn-primary {
+  background-color: var(--maria-green);
+  border-color: var(--maria-gold-hover);
+  color: var(--text-primary);
+}
+
+.btn-success,
+.btn-info {
+  background-color: var(--maria-green);
+  border-color: var(--maria-gold-hover);
+  color: var(--text-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background-color: var(--maria-gold-hover);
+  border-color: var(--maria-gold-hover);
+  color: var(--maria-green-dark);
+}
+
+.btn-success:hover,
+.btn-success:focus,
+.btn-success:active,
+.btn-info:hover,
+.btn-info:focus,
+.btn-info:active {
+  background-color: var(--maria-gold-hover);
+  border-color: var(--maria-gold-hover);
+  color: var(--maria-green-dark);
+}
+
+.btn-secondary,
+.btn-outline-secondary:hover {
+  background-color: var(--maria-gold);
+  border-color: var(--maria-gold);
+  color: var(--maria-green-dark);
+}
+
+.btn-outline-primary {
+  border-color: var(--maria-gold-hover);
+  color: var(--maria-gold-hover);
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  background-color: var(--maria-gold-hover);
+  border-color: var(--maria-gold-hover);
+  color: var(--maria-green-dark);
+}
+
+.badge.bg-primary,
+.badge.bg-success,
+.badge.bg-info,
+.bg-info,
+.progress-bar {
+  background-color: var(--maria-green) !important;
+  color: var(--text-primary);
+}
+
+.alert-danger,
+.badge.bg-danger,
+.btn-danger {
+  background-color: var(--maria-green-dark) !important;
+  border-color: var(--danger) !important;
+  color: var(--text-primary);
+}
+
+.pagination .page-item.active .page-link {
+  background-color: var(--maria-gold);
+  border-color: var(--maria-gold);
+  color: var(--maria-green-dark);
+}
+
+.pagination .page-item.disabled .page-link {
+  background-color: var(--maria-green-dark);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+hr,
+.dropdown-divider {
+  border-color: var(--border);
+  opacity: 1;
+}
+
+#header-img {
+  filter: none;
+}
+
+#logo-panel {
+  height: 96px !important;
+  max-width: min(100%, 320px);
+  object-fit: contain;
+}
+
+#page-header-container {
+  margin-bottom: 14px;
+}
+
+.sub-page-header {
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 767px) {
+  #logo-panel {
+    height: 76px !important;
+    max-width: 250px;
+  }
+
+  .table > :not(caption) > * > * {
+    padding-top: 0.62rem;
+    padding-bottom: 0.62rem;
+  }
+}

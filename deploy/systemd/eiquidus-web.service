@@ -1,0 +1,44 @@
+[Unit]
+Description=MariaCoin eIquidus web
+After=network-online.target mongod.service mariacoind.service
+Requires=mongod.service mariacoind.service
+
+[Service]
+Type=simple
+User=eiquidus
+Group=eiquidus
+SupplementaryGroups=maria-rpc
+WorkingDirectory=/opt/eiquidus/current
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=EIQUIDUS_MONGODB_CREDENTIALS=/etc/eiquidus/mongodb-app.json
+Environment=EIQUIDUS_MONGODB_INDEX_MIGRATION=0
+Environment=EIQUIDUS_ALLOW_ORPHAN_MIGRATION_RESUME=0
+# The pinned application binds explicitly to 127.0.0.1:3001; cgroup IP policy is defense in depth.
+ExecStartPre=/usr/local/libexec/eiquidus/preflight.sh
+ExecStartPre=+/usr/local/libexec/eiquidus/verify-index.js --verify-marker
+ExecStartPre=/usr/local/bin/node ./scripts/prestart.js
+ExecStart=/usr/local/bin/node --stack-size=10000 ./bin/cluster 1
+KillSignal=SIGINT
+KillMode=control-group
+Restart=on-failure
+RestartSec=10
+LimitCORE=0
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadOnlyPaths=/opt/eiquidus /etc/eiquidus /etc/mariacoin
+ReadWritePaths=/var/lib/eiquidus
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

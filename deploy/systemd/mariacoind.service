@@ -1,0 +1,31 @@
+[Unit]
+Description=MariaCoin daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mariacoin
+Group=mariacoin
+SupplementaryGroups=maria-rpc
+ExecStart=/opt/mariacoin/5.5.1/mariad -conf=/etc/mariacoin/maria.conf -datadir=/var/lib/mariacoin -paramsdir=/var/lib/mariacoin-params -printtoconsole
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadOnlyPaths=/etc/mariacoin /var/lib/mariacoin-params /opt/mariacoin
+ReadWritePaths=/var/lib/mariacoin /var/log/mariacoin
+UMask=0027
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
