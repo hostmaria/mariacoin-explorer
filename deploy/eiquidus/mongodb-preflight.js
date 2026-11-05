@@ -145,6 +145,38 @@ async function ensureAddressTransactionIndex(database, allowIndexMigration) {
   console.log('ADDRESS_TRANSACTION_INDEX_OK');
 }
 
+// The application connects with autoIndex disabled, so nothing creates the indexes the
+// models declare. A clean install must build them explicitly (administrator migration),
+// and every ordinary start verifies them: without them each per-block lookup is a full
+// collection scan and an initial index slows down quadratically.
+async function ensureModelIndexes(database, allowIndexMigration, root = releaseRoot) {
+  const {declaredIndexes, sameKey} = require(path.join(root, 'deploy/eiquidus/model-indexes.js'));
+  const specs = declaredIndexes(root);
+  let created = 0;
+  for (const spec of specs) {
+    const collection = database.collection(spec.collection);
+    let existing = [];
+    try {
+      existing = await collection.indexes();
+    } catch (err) {
+      if (err.codeName !== 'NamespaceNotFound' && err.code !== 26)
+        throw err;
+    }
+    const current = existing.find(index => sameKey(index.key, spec.key));
+    if (!current) {
+      if (!allowIndexMigration)
+        throw new Error(`Model index missing: ${spec.collection} ${JSON.stringify(spec.key)} (run the administrator index migration)`);
+      await collection.createIndex(spec.key, spec.options);
+      created++;
+      continue;
+    }
+    if (Boolean(current.unique) !== Boolean(spec.options.unique))
+      throw new Error(`Model index uniqueness differs: ${spec.collection} ${JSON.stringify(spec.key)}`);
+  }
+  console.log(`MODEL_INDEXES_OK declared=${specs.length}${created ? ` created=${created}` : ''}`);
+  return {declared: specs.length, created};
+}
+
 async function main() {
   const credentialPath = process.env.EIQUIDUS_MONGODB_CREDENTIALS || '/etc/eiquidus/mongodb-app.json';
   const allowIndexMigration = process.env.EIQUIDUS_MONGODB_INDEX_MIGRATION === '1';
@@ -166,6 +198,7 @@ async function main() {
     await ensureClaimIndexes(database, allowIndexMigration);
     await ensureStatsIndex(database, allowIndexMigration);
     await ensureAddressTransactionIndex(database, allowIndexMigration);
+    await ensureModelIndexes(database, allowIndexMigration);
     const stats = await database.collection('coinstats').findOne(
       {coin: 'MariaCoin'}, {projection: {orphan_reconciliation: 1}});
     if (stats && stats.orphan_reconciliation != null &&
@@ -204,7 +237,7 @@ async function main() {
   }
 }
 
-module.exports = {ensureIndex, ensureAddressTransactionIndex};
+module.exports = {ensureIndex, ensureAddressTransactionIndex, ensureModelIndexes};
 if (require.main === module) {
   main().catch((err) => {
     console.error(err.message);

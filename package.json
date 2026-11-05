@@ -13,7 +13,7 @@
     "start-pm2-debug": "npm run prestart \"pm2 development\" && pm2 logs",
     "stop-pm2": "pm2 stop explorer",
     "reload-pm2": "npm run prestart \"pm2 production reload\"",
-    "test": "node ./node_modules/jasmine/bin/jasmine.js test/explorerSpec.js test/mariacoinV551Spec.js test/claimSecuritySpec.js test/orphanTipsSpec.js",
+    "test": "node ./node_modules/jasmine/bin/jasmine.js test/explorerSpec.js test/mariacoinV551Spec.js test/claimSecuritySpec.js test/orphanTipsSpec.js test/mongodbPreflightSpec.js",
     "test:markets-live": "node ./node_modules/jasmine/bin/jasmine.js test/marketSpec.js",
     "prestart": "node ./scripts/prestart.js",
     "sync-blocks": "node ./scripts/sync.js index update",
